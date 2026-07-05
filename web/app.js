@@ -914,6 +914,33 @@ function thumbSvg(p, W = 240, H = 120) {
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${g.join("")}</svg>`;
 }
 
+/* проекты на диске (папки projects/<имя>/project.json), которых нет в базе браузера */
+async function scanDiskProjects(existing) {
+  const out = [];
+  if (!dirHandle) return out;
+  try {
+    if (await dirHandle.queryPermission({ mode: "readwrite" }) !== "granted" &&
+        await dirHandle.requestPermission({ mode: "readwrite" }) !== "granted") return out;
+    const projRoot = await dirHandle.getDirectoryHandle("projects").catch(() => null);
+    if (!projRoot) return out;
+    for await (const [folder, h] of projRoot.entries()) {
+      if (h.kind !== "directory") continue;
+      const fh = await h.getFileHandle("project.json").catch(() => null);
+      if (!fh) continue;
+      let data, file;
+      try {
+        file = await fh.getFile();
+        data = JSON.parse(await file.text());
+      } catch (_) { continue; }
+      if (!data || !data.kitchen) continue;
+      const pname = data.name || folder;
+      const known = existing.some(r => r.name === pname || FCCore.slug(r.name) === folder);
+      if (!known) out.push({ folder, name: pname, data, mtime: file.lastModified });
+    }
+  } catch (_) {}
+  return out.sort((a, b) => b.mtime - a.mtime);
+}
+
 async function openModal() {
   const list = (await DB.list()).sort((a, b) => b.updatedAt - a.updatedAt);
   const host = $("#modalCards");
@@ -952,6 +979,34 @@ async function openModal() {
     });
     host.appendChild(card);
   }
+
+  // проекты, найденные только на диске — импорт одним кликом
+  const disk = await scanDiskProjects(list);
+  for (const dp of disk) {
+    const card = document.createElement("div");
+    card.className = "card disk";
+    card.title = "Проект найден в папке projects/, но его нет в списке — кликните, чтобы импортировать";
+    card.innerHTML = `
+      <div class="card-thumb">${thumbSvg(dp.data)}</div>
+      <div class="card-name">${esc(dp.name)}</div>
+      <div class="card-date">на диске: projects/${esc(dp.folder)}/ · ${new Date(dp.mtime).toLocaleString("ru")}</div>
+      <div class="card-btns"><button>Импортировать</button></div>`;
+    card.addEventListener("click", async () => {
+      P = FCCore.migrate(dp.data);
+      P.name = dp.name;
+      dbId = null; sel = null;
+      activeSide = FCCore.sidesOf(P)[0];
+      await persistNow();
+      undoMgr.reset(P);
+      syncPanelInputs(); renderAll(); closeModal();
+      toast(`Импортирован с диска: ${dp.name}`, "ok");
+    });
+    host.appendChild(card);
+  }
+  $("#modalHint").textContent = dirHandle
+    ? (disk.length ? "" : "Все проекты из папки projects/ уже в списке.")
+    : "Подключите папку FlatCraft (кнопка «Папка…»), чтобы видеть проекты с диска.";
+
   $("#modal").style.display = "flex";
 }
 function closeModal() { $("#modal").style.display = "none"; }
