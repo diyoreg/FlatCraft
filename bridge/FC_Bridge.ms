@@ -1,22 +1,22 @@
 /* FlatCraft Bridge - file-based command bridge for driving 3ds Max
-   from outside (Claude Code / future web editor).
+   from outside (Claude Code / web editor).
 
    How it works:
      - polls   bridge/inbox/   for *.ms and *.py files every 400 ms
-     - executes each file, writes the result to bridge/outbox/<name>.txt
+     - a file is executed only when its size is UNCHANGED between two
+       consecutive ticks (protects against reading half-written files)
+     - executes the file, writes result to bridge/outbox/<name>.txt
      - deletes the inbox file after execution
      - heartbeat: bridge/alive.txt is refreshed every ~2 seconds
 
    Start:  Scripting > Run Script > FC_Bridge.ms  (or drag into viewport)
    Stop:   run  FC_BridgeStop()  in the MAXScript Listener.
-
-   Note for senders: write the command file under a temporary name
-   (e.g. cmd.tmp) and rename it to cmd.ms so it is never read half-written.
    ASCII only in this file. */
 
 global FC_BridgeDir
 global FC_BridgeTimer
 global FC_BridgeTickCount = 0
+global FC_BridgePrev = #()   -- #(#(path, size), ...) seen on previous tick
 global FC_BridgeStop
 global FC_BridgeWriteText
 global FC_BridgeProcess
@@ -38,7 +38,18 @@ fn FC_BridgeWriteText fname txt = (
 
 fn FC_BridgeProcess = (
     local files = (getFiles (FC_BridgeDir + "inbox\\*.ms")) + (getFiles (FC_BridgeDir + "inbox\\*.py"))
+    local ready = #()
+    local nextPrev = #()
     for f in files do (
+        local sz = -1
+        try (sz = getFileSize f) catch()
+        local prevSz = undefined
+        for pr in FC_BridgePrev where pr[1] == f do prevSz = pr[2]
+        if prevSz != undefined and prevSz == sz and sz > 0 then append ready f
+        else append nextPrev #(f, sz)   -- first sighting or still growing
+    )
+    FC_BridgePrev = nextPrev
+    for f in ready do (
         local res = ""
         try (
             if (toLower (getFilenameType f)) == ".py" then (
