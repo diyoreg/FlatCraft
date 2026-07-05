@@ -971,9 +971,22 @@ async function openModal() {
       } else if (a === "exp") {
         downloadJson(JSON.stringify(rec.data, null, 2), FCCore.slug(rec.name) + ".json");
       } else if (a === "del") {
-        if (!confirm(`Удалить проект «${rec.name}»?`)) return;
+        if (!confirm(`Удалить проект «${rec.name}» из списка?`)) return;
         await DB.del(rec.id);
         if (rec.id === dbId) { dbId = null; }
+        // если у проекта есть папка на диске — предложить удалить и её,
+        // иначе он снова появится в списке как «на диске»
+        if (dirHandle) {
+          try {
+            const projRoot = await dirHandle.getDirectoryHandle("projects");
+            const folder = FCCore.slug(rec.name);
+            await projRoot.getDirectoryHandle(folder);
+            if (confirm(`Удалить также папку projects/${folder}/ с диска?\nВ ней project.json и сцена 3ds Max (.max).`)) {
+              await projRoot.removeEntry(folder, { recursive: true });
+              toast(`Папка projects/${folder}/ удалена с диска`, "ok");
+            }
+          } catch (_) {}
+        }
         openModal();
       }
     });
@@ -990,8 +1003,23 @@ async function openModal() {
       <div class="card-thumb">${thumbSvg(dp.data)}</div>
       <div class="card-name">${esc(dp.name)}</div>
       <div class="card-date">на диске: projects/${esc(dp.folder)}/ · ${new Date(dp.mtime).toLocaleString("ru")}</div>
-      <div class="card-btns"><button>Импортировать</button></div>`;
-    card.addEventListener("click", async () => {
+      <div class="card-btns">
+        <button data-a="imp">Импортировать</button>
+        <button data-a="del" class="danger" title="Удалить папку с диска">✕</button>
+      </div>`;
+    card.addEventListener("click", async e => {
+      const a = e.target.dataset && e.target.dataset.a;
+      if (a === "del") {
+        e.stopPropagation();
+        if (!confirm(`Удалить с диска папку projects/${dp.folder}/?\nВ ней project.json и сцена 3ds Max (.max). Действие необратимо.`)) return;
+        try {
+          const projRoot = await dirHandle.getDirectoryHandle("projects");
+          await projRoot.removeEntry(dp.folder, { recursive: true });
+          toast(`Удалено с диска: projects/${dp.folder}/`, "ok");
+        } catch (err) { toast("Не удалось удалить: " + err.message, "err"); }
+        openModal();
+        return;
+      }
       P = FCCore.migrate(dp.data);
       P.name = dp.name;
       dbId = null; sel = null;
