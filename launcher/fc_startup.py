@@ -38,9 +38,14 @@ def main():
         if bdir not in sys.path:
             sys.path.insert(0, bdir)
         import fc_scene
-        n = fc_scene.build_project(slug)
+        res = fc_scene.build_project(slug)
         with open(out, "w", encoding="utf-8") as f:
-            f.write("OK %d" % n)
+            if res[0] == "ok":
+                f.write("OK %d" % res[1])
+            else:
+                # ручные правки в сцене: браузер спросит пользователя
+                # и пришлёт повторную команду с force=True через мост
+                f.write("CONFIRM\n" + res[1])
     except Exception:
         with open(out, "w", encoding="utf-8") as f:
             f.write("ERROR\n" + traceback.format_exc())

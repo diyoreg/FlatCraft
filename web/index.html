@@ -176,6 +176,19 @@
   .card-btns { display: flex; gap: 5px; }
   .card-btns button { padding: 3px 10px; font-size: 12px; }
 
+  /* ---------- подтверждение пересборки ---------- */
+  #confirm {
+    display: none; position: fixed; inset: 0; z-index: 80;
+    background: #000a; align-items: center; justify-content: center;
+  }
+  #confirmBox {
+    width: min(460px, 90vw); background: var(--panel);
+    border: 1px solid var(--danger); border-radius: 12px; padding: 20px;
+  }
+  #confirmBox h2 { font-size: 15px; color: #fff; margin-bottom: 10px; }
+  #confirmBox p { color: var(--text); white-space: pre-wrap; font-size: 13px; }
+  .confirm-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
   /* ---------- тосты ---------- */
   #toasts { position: fixed; right: 16px; bottom: 42px; z-index: 70; display: flex; flex-direction: column; gap: 8px; }
   .toast {
@@ -343,6 +356,18 @@
       <button id="modalClose">✕</button>
     </div>
     <div id="modalCards"></div>
+  </div>
+</div>
+
+<!-- подтверждение пересборки -->
+<div id="confirm">
+  <div id="confirmBox">
+    <h2>Пересобрать кухню?</h2>
+    <p id="confirmText"></p>
+    <div class="confirm-btns">
+      <button id="confirmNo">Отмена</button>
+      <button id="confirmYes" class="primary">Пересобрать</button>
+    </div>
   </div>
 </div>
 

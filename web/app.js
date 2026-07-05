@@ -994,7 +994,7 @@ $("#btnFolder").addEventListener("click", async () => {
   } catch (e) { if (e.name !== "AbortError") toast(e.message, "err"); }
 });
 
-function buildScript(slugName) {
+function buildScript(slugName, force) {
   return [
     "# -*- coding: utf-8 -*-",
     "import os, sys, traceback",
@@ -1009,12 +1009,30 @@ function buildScript(slugName) {
     "    import importlib, fc_builder, fc_scene",
     "    importlib.reload(fc_builder)",
     "    importlib.reload(fc_scene)",
-    "    n = fc_scene.build_project(" + JSON.stringify(slugName) + ")",
-    "    open(out, 'w', encoding='utf-8').write('OK %d' % n)",
+    "    res = fc_scene.build_project(" + JSON.stringify(slugName) + ", force=" + (force ? "True" : "False") + ")",
+    "    if res[0] == 'ok':",
+    "        open(out, 'w', encoding='utf-8').write('OK %d' % res[1])",
+    "    else:",
+    "        open(out, 'w', encoding='utf-8').write('CONFIRM\\n' + res[1])",
     "except Exception:",
     "    open(out, 'w', encoding='utf-8').write('ERROR\\n' + traceback.format_exc())",
     "",
   ].join("\n");
+}
+
+/* диалог подтверждения пересборки */
+function askConfirm(text) {
+  return new Promise(resolve => {
+    $("#confirmText").textContent = text;
+    $("#confirm").style.display = "flex";
+    const done = v => {
+      $("#confirm").style.display = "none";
+      $("#confirmYes").onclick = $("#confirmNo").onclick = null;
+      resolve(v);
+    };
+    $("#confirmYes").onclick = () => done(true);
+    $("#confirmNo").onclick = () => done(false);
+  });
 }
 
 async function bridgeAlive(bridge) {
@@ -1039,12 +1057,33 @@ $("#btnBuild").addEventListener("click", async () => {
     const outbox = await bridge.getDirectoryHandle("outbox", { create: true });
     await outbox.removeEntry("web_build_result.txt").catch(() => {});
 
+    const waitResult = async (waitMs, sawAliveInit) => {
+      let result = null, sawAlive = sawAliveInit;
+      const t0 = Date.now();
+      while (!result && Date.now() - t0 < waitMs) {
+        await sleep(700);
+        try {
+          const f = await (await outbox.getFileHandle("web_build_result.txt")).getFile();
+          result = await f.text();
+        } catch (_) {}
+        if (!result && !sawAlive && await bridgeAlive(bridge)) {
+          sawAlive = true;
+          toast("3ds Max запущен, идёт сборка…", "ok");
+        }
+        if (!result && !sawAlive && Date.now() - t0 > 90000)
+          throw new Error("3ds Max не запустился за 90 секунд.\n" +
+            "Один раз выполните launcher\\setup.cmd (двойной клик) и повторите.");
+      }
+      if (!result) throw new Error("Max не ответил — проверьте мост (bridge/FC_Bridge.ms)");
+      return result;
+    };
+
     const alive = await bridgeAlive(bridge);
     let waitMs;
     if (alive) {
       // мост работает — обычная быстрая сборка
       const inbox = await bridge.getDirectoryHandle("inbox", { create: true });
-      await writeFile(inbox, "web_build.py", buildScript(slugName));
+      await writeFile(inbox, "web_build.py", buildScript(slugName, false));
       toast(`Сборка «${P.name}» отправлена в 3ds Max…`, "ok");
       waitMs = 30000;
     } else {
@@ -1055,24 +1094,26 @@ $("#btnBuild").addEventListener("click", async () => {
       waitMs = 300000; // старт Max небыстрый
     }
 
-    // ждать результат
-    let result = null, sawAlive = alive;
-    const t0 = Date.now();
-    while (!result && Date.now() - t0 < waitMs) {
-      await sleep(700);
-      try {
-        const f = await (await outbox.getFileHandle("web_build_result.txt")).getFile();
-        result = await f.text();
-      } catch (_) {}
-      if (!result && !sawAlive && await bridgeAlive(bridge)) {
-        sawAlive = true;
-        toast("3ds Max запущен, идёт сборка…", "ok");
+    let result = await waitResult(waitMs, alive);
+
+    // защита: сцену меняли вручную в Max — спросить пользователя
+    if (result.startsWith("CONFIRM")) {
+      const detail = result.split("\n").slice(1).join(" ").trim();
+      const ok = await askConfirm(
+        `Сцена «${P.name}» изменялась вручную в 3ds Max` +
+        (detail ? ` (${detail})` : "") + ".\n\n" +
+        "Пересобрать кухню? Объекты FlatCraft будут перестроены по проекту " +
+        "(ваши правки над ними сбросятся), добавленные вами объекты останутся в сцене.");
+      if (!ok) {
+        toast("Сборка отменена — сцена в Max не тронута", "ok");
+        return;
       }
-      if (!result && !sawAlive && Date.now() - t0 > 90000)
-        throw new Error("3ds Max не запустился за 90 секунд.\n" +
-          "Один раз выполните launcher\\setup.cmd (двойной клик) и повторите.");
+      await outbox.removeEntry("web_build_result.txt").catch(() => {});
+      const inbox = await bridge.getDirectoryHandle("inbox", { create: true });
+      await writeFile(inbox, "web_build.py", buildScript(slugName, true));
+      result = await waitResult(30000, true);
     }
-    if (!result) throw new Error("Max не ответил — проверьте мост (bridge/FC_Bridge.ms)");
+
     if (result.startsWith("OK"))
       toast(`Готово: «${P.name}» собрана в своей сцене (${result.replace("OK ", "")} объектов).\n` +
         `Файл: projects/${slugName}/${slugName}.max`, "ok", 6000);
