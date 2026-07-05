@@ -1,0 +1,75 @@
+/* FlatCraft Bridge - file-based command bridge for driving 3ds Max
+   from outside (Claude Code / future web editor).
+
+   How it works:
+     - polls   bridge/inbox/   for *.ms and *.py files every 400 ms
+     - executes each file, writes the result to bridge/outbox/<name>.txt
+     - deletes the inbox file after execution
+     - heartbeat: bridge/alive.txt is refreshed every ~2 seconds
+
+   Start:  Scripting > Run Script > FC_Bridge.ms  (or drag into viewport)
+   Stop:   run  FC_BridgeStop()  in the MAXScript Listener.
+
+   Note for senders: write the command file under a temporary name
+   (e.g. cmd.tmp) and rename it to cmd.ms so it is never read half-written.
+   ASCII only in this file. */
+
+global FC_BridgeDir
+global FC_BridgeTimer
+global FC_BridgeTickCount = 0
+global FC_BridgeStop
+global FC_BridgeWriteText
+global FC_BridgeProcess
+global FC_BridgeTick
+
+try (FC_BridgeTimer.Stop()) catch()
+
+FC_BridgeDir = getFilenamePath (getSourceFileName())
+makeDir (FC_BridgeDir + "inbox") all:true
+makeDir (FC_BridgeDir + "outbox") all:true
+
+fn FC_BridgeWriteText fname txt = (
+    try (
+        local ss = createFile fname
+        format "%" txt to:ss
+        close ss
+    ) catch()
+)
+
+fn FC_BridgeProcess = (
+    local files = (getFiles (FC_BridgeDir + "inbox\\*.ms")) + (getFiles (FC_BridgeDir + "inbox\\*.py"))
+    for f in files do (
+        local res = ""
+        try (
+            if (toLower (getFilenameType f)) == ".py" then (
+                python.ExecuteFile f
+                res = "OK\n(python file executed; its own prints go to the Listener)"
+            ) else (
+                local r = fileIn f
+                res = "OK\n" + (r as string)
+            )
+        ) catch (
+            res = "ERROR\n" + (getCurrentException())
+        )
+        FC_BridgeWriteText (FC_BridgeDir + "outbox\\" + (getFilenameFile f) + ".txt") res
+        try (deleteFile f) catch()
+    )
+)
+
+fn FC_BridgeTick s e = (
+    FC_BridgeTickCount += 1
+    FC_BridgeProcess()
+    if (mod FC_BridgeTickCount 5) == 0 do
+        FC_BridgeWriteText (FC_BridgeDir + "alive.txt") (localTime as string)
+)
+
+fn FC_BridgeStop = (
+    try (FC_BridgeTimer.Stop()) catch()
+    format "FlatCraft Bridge stopped.\n"
+)
+
+FC_BridgeTimer = dotNetObject "System.Windows.Forms.Timer"
+FC_BridgeTimer.Interval = 400
+dotNet.addEventHandler FC_BridgeTimer "Tick" FC_BridgeTick
+FC_BridgeTimer.Start()
+format "FlatCraft Bridge is running. Inbox: %inbox\\  Stop: FC_BridgeStop()\n" FC_BridgeDir

@@ -15,6 +15,11 @@ kitchen sample image hi tech/
 *.bak
 autoback/
 
+# Bridge runtime files (created while FC_Bridge.ms is running)
+bridge/inbox/
+bridge/outbox/
+bridge/alive.txt
+
 # OS junk
 Thumbs.db
 Desktop.ini
