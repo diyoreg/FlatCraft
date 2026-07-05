@@ -1,0 +1,21 @@
+# Heavy assets — not tracked in git (3D models, textures, reference renders)
+models/
+textures/
+kitchen sample image hi tech/
+
+# 3D / DCC file formats (in case they appear elsewhere)
+*.max
+*.fbx
+*.FBX
+*.obj
+*.3ds
+*.blend
+
+# 3ds Max backup/autosave
+*.bak
+autoback/
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
