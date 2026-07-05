@@ -33,6 +33,9 @@
   }
   #saved { font-size: 11px; color: var(--ok); opacity: 0; transition: opacity .3s; width: 86px; }
   #saved.on { opacity: 1; }
+  #maxStatus { font-size: 11px; }
+  #maxStatus.on { color: var(--ok); }
+  #maxStatus.off { color: var(--muted); }
   header .spacer { flex: 1; }
   button {
     background: transparent; border: 1px solid var(--border); color: var(--text);
@@ -206,6 +209,7 @@
   <input id="projName" placeholder="Имя проекта">
   <span id="saved"></span>
   <div class="spacer"></div>
+  <span id="maxStatus"></span>
   <button id="btnImport" title="Импортировать project.json">Импорт</button>
   <button id="btnExport" class="primary" title="Сохранить project.json (Ctrl+S)">Экспорт</button>
   <button id="btnFolder">Папка…</button>

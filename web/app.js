@@ -1003,9 +1003,10 @@ function buildScript(slugName) {
     "    bdir = os.path.join(root, 'builder')",
     "    if bdir not in sys.path:",
     "        sys.path.insert(0, bdir)",
-    "    import importlib, fc_builder",
+    "    import importlib, fc_builder, fc_scene",
     "    importlib.reload(fc_builder)",
-    "    n = fc_builder.build_from_file(os.path.join(root, 'projects', " + JSON.stringify(slugName) + ", 'project.json'))",
+    "    importlib.reload(fc_scene)",
+    "    n = fc_scene.build_project(" + JSON.stringify(slugName) + ")",
     "    open(out, 'w', encoding='utf-8').write('OK %d' % n)",
     "except Exception:",
     "    open(out, 'w', encoding='utf-8').write('ERROR\\n' + traceback.format_exc())",
@@ -1013,51 +1014,84 @@ function buildScript(slugName) {
   ].join("\n");
 }
 
+async function bridgeAlive(bridge) {
+  try {
+    const f = await (await bridge.getFileHandle("alive.txt")).getFile();
+    return Date.now() - f.lastModified < 10000;
+  } catch (_) { return false; }
+}
+
 $("#btnBuild").addEventListener("click", async () => {
   if (!dirHandle || building) return;
   building = true; renderHeader();
   try {
     if (!await ensurePermission(dirHandle)) throw new Error("нет доступа к папке");
-    const bridge = await dirHandle.getDirectoryHandle("bridge");
+    const bridge = await dirHandle.getDirectoryHandle("bridge", { create: true });
 
-    // жив ли мост: alive.txt должен обновляться каждые ~2 c
-    let alive = false;
-    try {
-      const f = await (await bridge.getFileHandle("alive.txt")).getFile();
-      alive = Date.now() - f.lastModified < 10000;
-    } catch (_) {}
-    if (!alive) throw new Error("мост не запущен — выполните в 3ds Max скрипт bridge/FC_Bridge.ms");
-
-    // сохранить проект
+    // сохранить проект (каждый проект живёт в своей папке и своей .max-сцене)
     const slugName = FCCore.slug(P.name);
     const projDir = await getDirPath(dirHandle, ["projects", slugName], true);
     await writeFile(projDir, "project.json", JSON.stringify(P, null, 2));
 
-    // убрать старый результат, отправить команду
     const outbox = await bridge.getDirectoryHandle("outbox", { create: true });
     await outbox.removeEntry("web_build_result.txt").catch(() => {});
-    const inbox = await bridge.getDirectoryHandle("inbox", { create: true });
-    await writeFile(inbox, "web_build.py", buildScript(slugName));
-    toast("Команда отправлена в 3ds Max…", "ok");
+
+    const alive = await bridgeAlive(bridge);
+    let waitMs;
+    if (alive) {
+      // мост работает — обычная быстрая сборка
+      const inbox = await bridge.getDirectoryHandle("inbox", { create: true });
+      await writeFile(inbox, "web_build.py", buildScript(slugName));
+      toast(`Сборка «${P.name}» отправлена в 3ds Max…`, "ok");
+      waitMs = 30000;
+    } else {
+      // Max не запущен — холодный старт через протокол flatcraft://
+      await writeFile(bridge, "launch_request.txt", slugName);
+      location.href = "flatcraft://launch";
+      toast("Запускаю 3ds Max…\nЕсли браузер спросит — разрешите открыть FlatCraft.", "ok", 9000);
+      waitMs = 300000; // старт Max небыстрый
+    }
 
     // ждать результат
-    let result = null;
-    for (let i = 0; i < 40 && !result; i++) {
-      await sleep(500);
+    let result = null, sawAlive = alive;
+    const t0 = Date.now();
+    while (!result && Date.now() - t0 < waitMs) {
+      await sleep(700);
       try {
         const f = await (await outbox.getFileHandle("web_build_result.txt")).getFile();
         result = await f.text();
       } catch (_) {}
+      if (!result && !sawAlive && await bridgeAlive(bridge)) {
+        sawAlive = true;
+        toast("3ds Max запущен, идёт сборка…", "ok");
+      }
+      if (!result && !sawAlive && Date.now() - t0 > 90000)
+        throw new Error("3ds Max не запустился за 90 секунд.\n" +
+          "Один раз выполните launcher\\setup.cmd (двойной клик) и повторите.");
     }
-    if (!result) throw new Error("Max не ответил за 20 секунд — проверьте мост");
-    if (result.startsWith("OK")) toast("Собрано в 3D: " + result.replace("OK", "объектов —"), "ok");
+    if (!result) throw new Error("Max не ответил — проверьте мост (bridge/FC_Bridge.ms)");
+    if (result.startsWith("OK"))
+      toast(`Готово: «${P.name}» собрана в своей сцене (${result.replace("OK ", "")} объектов).\n` +
+        `Файл: projects/${slugName}/${slugName}.max`, "ok", 6000);
     else throw new Error(result.slice(0, 400));
   } catch (err) {
-    toast("Сборка: " + err.message, "err", 8000);
+    toast("Сборка: " + err.message, "err", 9000);
   } finally {
     building = false; renderHeader();
   }
 });
+
+/* индикатор моста в шапке: серый — Max не запущен, зелёный — на связи */
+setInterval(async () => {
+  const el = $("#maxStatus");
+  if (!dirHandle) { el.textContent = ""; return; }
+  try {
+    const bridge = await dirHandle.getDirectoryHandle("bridge");
+    const on = await bridgeAlive(bridge);
+    el.textContent = on ? "● Max на связи" : "○ Max не запущен";
+    el.className = on ? "on" : "off";
+  } catch (_) { el.textContent = ""; }
+}, 5000);
 
 /* ============================= прочее UI ============================= */
 function toast(text, kind = "ok", ms = 4000) {

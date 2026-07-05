@@ -1,0 +1,107 @@
+{
+  "formatVersion": 2,
+  "name": "Новая кухня",
+  "units": "mm",
+  "room": {
+    "length": 4200,
+    "width": 3000,
+    "height": 2800,
+    "wallThickness": 400,
+    "ceiling": false
+  },
+  "kitchen": {
+    "wall": "south",
+    "offsetX": 0,
+    "dims": {
+      "plinthHeight": 100,
+      "plinthRecess": 10,
+      "lowerHeight": 710,
+      "lowerDepth": 600,
+      "gap": 4,
+      "shadowGap": 0,
+      "countertopThickness": 40,
+      "countertopOverhang": 10,
+      "backsplashGap": 600,
+      "backsplashThickness": 12,
+      "upperHeight": 720,
+      "upperDepth": 300,
+      "antresolHeight": 360
+    },
+    "lower": {
+      "blocks": [
+        {
+          "type": "tall",
+          "width": 600,
+          "label": "пенал"
+        },
+        {
+          "type": "cabinet",
+          "width": 400
+        },
+        {
+          "type": "cabinet",
+          "width": 400
+        },
+        {
+          "type": "drawers",
+          "width": 600,
+          "drawers": 3
+        },
+        {
+          "type": "cabinet",
+          "width": 450
+        },
+        {
+          "type": "cabinet",
+          "width": 450
+        },
+        {
+          "type": "tall",
+          "width": 600,
+          "label": "пенал"
+        }
+      ]
+    },
+    "upper": {
+      "enabled": true,
+      "offsetX": 0,
+      "antresol": false,
+      "blocks": [
+        {
+          "type": "gap",
+          "width": 600,
+          "label": "вытяжка"
+        },
+        {
+          "type": "cabinet",
+          "width": 400
+        },
+        {
+          "type": "cabinet",
+          "width": 400
+        },
+        {
+          "type": "cabinet",
+          "width": 600
+        },
+        {
+          "type": "cabinet",
+          "width": 450
+        },
+        {
+          "type": "cabinet",
+          "width": 450
+        }
+      ]
+    },
+    "colors": {
+      "walls": "#EDEDED",
+      "floor": "#B9975B",
+      "lower": "#3A3F45",
+      "upper": "#E9E4DA",
+      "countertop": "#23262B",
+      "plinth": "#1C1E22",
+      "backsplash": "#CFC8BB"
+    }
+  }
+}
