@@ -20,6 +20,10 @@ bridge/inbox/
 bridge/outbox/
 bridge/alive.txt
 
+# Python cache
+__pycache__/
+*.pyc
+
 # OS junk
 Thumbs.db
 Desktop.ini
