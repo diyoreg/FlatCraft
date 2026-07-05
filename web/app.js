@@ -200,9 +200,10 @@ function renderFront() {
   const room = P.room, d = D(), c = C(), z = FCCore.zLevels(d);
   const g = [];
 
-  // комната
-  g.push(R(X(0), Yz(room.height), room.length * fx.s, room.height * fx.s, c.walls + "12",
-    `stroke="#31363f" stroke-width="1"`));
+  // комната (при «Убрать стены и пол» — только контур-ориентир)
+  g.push(R(X(0), Yz(room.height), room.length * fx.s, room.height * fx.s,
+    room.noShell ? "none" : c.walls + "12",
+    `stroke="#31363f" stroke-width="1" ${room.noShell ? 'stroke-dasharray="6 5"' : ""}`));
   g.push(L(X(0), Yz(0), X(room.length), Yz(0), "#4a505a", `stroke-width="1.5"`));
 
   const lower = placedOf("lower");
@@ -295,7 +296,9 @@ function renderTop() {
   const s = Math.min((box.width - 2 * m) / room.length, (box.height - 2 * m) / room.width);
   const Xt = mm => m + mm * s, Yt = mm => m + mm * s;
   const g = [];
-  g.push(R(Xt(0), Yt(0), room.length * s, room.width * s, c.floor + "20", `stroke="#31363f"`));
+  g.push(R(Xt(0), Yt(0), room.length * s, room.width * s,
+    room.noShell ? "none" : c.floor + "20",
+    `stroke="#31363f" ${room.noShell ? 'stroke-dasharray="6 5"' : ""}`));
   const lower = placedOf("lower");
   for (const [x1, x2] of FCCore.runs(lower, FCCore.underCT))
     g.push(R(Xt(x1) - 2, Yt(0), (x2 - x1) * s + 4, (d.lowerDepth + d.countertopOverhang) * s, c.countertop + "77"));

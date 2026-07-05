@@ -107,6 +107,8 @@ class Builder(object):
     # ------------------------------------------------------------------ room
     def build_room(self):
         room = self.p.get("room", {})
+        if room.get("noShell"):
+            return  # «Убрать стены и пол»: коробка комнаты не строится совсем
         L = float(room.get("length", 4000))
         W = float(room.get("width", 3000))
         H = float(room.get("height", 2700))

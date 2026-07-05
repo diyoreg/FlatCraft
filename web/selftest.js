@@ -201,6 +201,19 @@ async function run() {
     lowerBlocks()[0].width = before; FC.commit();
   }
 
+  { // чекбокс «Убрать стены и пол»
+    const cb = document.querySelector('[data-k="room.noShell"]');
+    ok(cb, "UI: чекбокс «Убрать стены и пол» существует");
+    cb.checked = true;
+    cb.dispatchEvent(new Event("change"));
+    await sleep(20);
+    ok(P().room.noShell === true, "UI: чекбокс пишет room.noShell в проект");
+    ok(FC.serialize().includes('"noShell": true'), "serialize: noShell попадает в project.json");
+    cb.checked = false;
+    cb.dispatchEvent(new Event("change"));
+    await sleep(20);
+  }
+
   { // сериализация формата
     const s = FC.serialize();
     ok(s.includes('"formatVersion": 2') && s.includes('"blocks"'), "serialize: валидный project.json");

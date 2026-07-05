@@ -22,7 +22,7 @@ const FCCore = (() => {
       formatVersion: 2,
       name: name || "Новая кухня",
       units: "mm",
-      room: { length: 4200, width: 3000, height: 2700, wallThickness: 400, ceiling: false },
+      room: { length: 4200, width: 3000, height: 2700, wallThickness: 400, ceiling: false, noShell: false },
       kitchen: {
         wall: "south", offsetX: 0,
         dims: { ...DIMS },
