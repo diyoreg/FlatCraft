@@ -14,7 +14,7 @@
     "offsetX": 0,
     "dims": {
       "plinthHeight": 100,
-      "plinthRecess": 50,
+      "plinthRecess": 10,
       "lowerHeight": 720,
       "lowerDepth": 600,
       "gap": 4,
