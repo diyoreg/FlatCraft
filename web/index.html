@@ -76,6 +76,14 @@
   .blk { cursor: grab; }
   .wlab { cursor: text; }
 
+  /* вкладки стен (Главная / Левая / Правая) */
+  #wallTabs {
+    position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    z-index: 3; display: none; gap: 4px;
+  }
+  #wallTabs button { padding: 3px 14px; font-size: 12px; background: var(--panel); border-radius: 5px; }
+  #wallTabs button.active { border-color: var(--accent); color: var(--accent); }
+
   /* панель инструментов над видом спереди */
   #vtools {
     position: absolute; top: 8px; right: 10px; z-index: 3;
@@ -176,6 +184,26 @@
   .card-btns { display: flex; gap: 5px; }
   .card-btns button { padding: 3px 10px; font-size: 12px; }
 
+  /* ---------- выбор раскладки нового проекта ---------- */
+  #layoutPick {
+    display: none; position: fixed; inset: 0; z-index: 85;
+    background: #000a; align-items: center; justify-content: center;
+  }
+  #layoutBox {
+    width: min(520px, 92vw); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+  }
+  #layoutBox h2 { font-size: 15px; color: #fff; margin-bottom: 4px; }
+  .lp-hint { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+  .lp-cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .lp-cards button {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 14px 8px; background: var(--panel2);
+  }
+  .lp-cards svg { width: 60px; height: 40px; }
+  .lp-cards span { color: #fff; font-weight: 500; }
+  .lp-cards small { color: var(--muted); font-size: 11px; }
+
   /* ---------- подтверждение пересборки ---------- */
   #confirm {
     display: none; position: fixed; inset: 0; z-index: 80;
@@ -247,10 +275,11 @@
     <div class="hint">Клик — добавить. Или перетащите кнопку прямо на чертёж в нужное место.</div>
 
     <h3>Раскладка</h3>
-    <div class="row"><label>Отступ слева, мм</label><input type="number" data-k="kitchen.offsetX" step="10"></div>
-    <div class="row"><label>Верхний ряд</label><input type="checkbox" data-k="kitchen.upper.enabled"></div>
-    <div class="row"><label>Сдвиг верха, мм</label><input type="number" data-k="kitchen.upper.offsetX" step="10"></div>
-    <div class="row"><label>Антресоль</label><input type="checkbox" data-k="kitchen.upper.antresol"></div>
+    <div class="row"><label>Тип кухни</label><span id="layoutLabel" style="color:#fff"></span></div>
+    <div class="row"><label>Отступ от угла, мм</label><input type="number" data-s="offsetX" step="10"></div>
+    <div class="row"><label>Верхний ряд</label><input type="checkbox" data-s="upper.enabled"></div>
+    <div class="row"><label>Сдвиг верха, мм</label><input type="number" data-s="upper.offsetX" step="10"></div>
+    <div class="row"><label>Антресоль</label><input type="checkbox" data-s="upper.antresol"></div>
 
     <h3>Комната</h3>
     <div class="row"><label>Длина (X), мм</label><input type="number" data-k="room.length" step="50"></div>
@@ -289,6 +318,7 @@
   <div id="center">
     <div class="view" id="viewFront">
       <div class="vlabel">Спереди</div>
+      <div id="wallTabs"></div>
       <div id="vtools">
         <button id="btnUndo" title="Отменить (Ctrl+Z)">↶</button>
         <button id="btnRedo" title="Вернуть (Ctrl+Y)">↷</button>
@@ -356,6 +386,29 @@
       <button id="modalClose">✕</button>
     </div>
     <div id="modalCards"></div>
+  </div>
+</div>
+
+<!-- выбор раскладки нового проекта -->
+<div id="layoutPick">
+  <div id="layoutBox">
+    <h2>Новый проект — раскладка кухни</h2>
+    <p class="lp-hint">Выбирается один раз при создании проекта.</p>
+    <div class="lp-cards">
+      <button data-layout="linear">
+        <svg viewBox="0 0 60 40"><rect x="6" y="6" width="48" height="8" rx="1" fill="#5b9dff"/></svg>
+        <span>Обычная</span><small>одна стена</small>
+      </button>
+      <button data-layout="L">
+        <svg viewBox="0 0 60 40"><rect x="6" y="6" width="48" height="8" rx="1" fill="#5b9dff"/><rect x="6" y="6" width="8" height="28" rx="1" fill="#5b9dff"/></svg>
+        <span>Г-образная</span><small>две стены</small>
+      </button>
+      <button data-layout="U">
+        <svg viewBox="0 0 60 40"><rect x="6" y="6" width="48" height="8" rx="1" fill="#5b9dff"/><rect x="6" y="6" width="8" height="28" rx="1" fill="#5b9dff"/><rect x="46" y="6" width="8" height="28" rx="1" fill="#5b9dff"/></svg>
+        <span>П-образная</span><small>три стены</small>
+      </button>
+    </div>
+    <div class="confirm-btns"><button id="layoutCancel">Отмена</button></div>
   </div>
 </div>
 

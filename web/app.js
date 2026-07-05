@@ -106,7 +106,8 @@ const DB = (() => {
 /* ============================= состояние ============================= */
 let P = FCCore.defaultProject();
 let dbId = null;
-let sel = null;                    // {row, idx}
+let sel = null;                    // {side, row, idx}
+let activeSide = "south";          // стена, показанная на виде спереди
 let ia = null;                     // взаимодействие на виде спереди
 let palDrag = null;                // перетаскивание из палитры
 let spaceHeld = false;
@@ -120,13 +121,16 @@ let cursorMm = null;
 
 const D = () => ({ ...FCCore.DIMS, ...P.kitchen.dims });
 const C = () => ({ ...FCCore.COLORS, ...P.kitchen.colors });
-const rowX0 = row => (+P.kitchen.offsetX || 0) +
-  (row === "upper" ? (+P.kitchen.upper.offsetX || 0) : 0);
-const placedOf = row => FCCore.layout(P.kitchen[row].blocks, D().gap, rowX0(row));
-const selBlock = () => (sel ? P.kitchen[sel.row].blocks[sel.idx] : null);
+const sideCfg = side => P.kitchen.sides[side];
+const blocksOf = (side, row) => sideCfg(side)[row].blocks;
+const rowX0 = (side, row) => (+sideCfg(side).offsetX || 0) +
+  (row === "upper" ? (+sideCfg(side).upper.offsetX || 0) : 0);
+const placedOf = (side, row) => FCCore.layout(blocksOf(side, row), D().gap, rowX0(side, row));
+const selBlock = () => (sel && sideCfg(sel.side) ? blocksOf(sel.side, sel.row)[sel.idx] : null);
 
 function clampSel() {
-  if (sel && !P.kitchen[sel.row].blocks[sel.idx]) sel = null;
+  if (!sideCfg(activeSide)) activeSide = FCCore.sidesOf(P)[0];
+  if (sel && (!sideCfg(sel.side) || !blocksOf(sel.side, sel.row)[sel.idx])) sel = null;
 }
 
 /* ============================= svg helpers ============================= */
@@ -138,16 +142,18 @@ const T = (x, y, t, extra = "") =>
 const L = (x1, y1, x2, y2, stroke = "#3a4048", extra = "") =>
   `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" ${extra}/>`;
 
-const isSel = (row, i) => sel && sel.row === row && sel.idx === i;
-const isDragged = (row, i) => ia && ia.kind === "move" && ia.row === row && ia.idx === i;
+const isSel = (side, row, i) => sel && sel.side === side && sel.row === row && sel.idx === i;
+const isDragged = (side, row, i) =>
+  ia && ia.kind === "move" && side === activeSide && ia.row === row && ia.idx === i;
 
 /* ============================= вид спереди ============================= */
 function computeFx() {
   const svg = $("#svgFront"), box = svg.getBoundingClientRect();
   const m = 48;
-  const fit = Math.min((box.width - 2 * m) / P.room.length, (box.height - 2 * m) / P.room.height);
+  const wl = FCCore.wallLength(P, activeSide);
+  const fit = Math.min((box.width - 2 * m) / wl, (box.height - 2 * m) / P.room.height);
   const s = fit * view.zoom;
-  fx = { s, ox: m + view.panX, oyFloor: box.height - m + view.panY, box, fit, m };
+  fx = { s, ox: m + view.panX, oyFloor: box.height - m + view.panY, box, fit, m, wl };
 }
 const X = mm => fx.ox + mm * fx.s;
 const Yz = mm => fx.oyFloor - mm * fx.s;
@@ -166,8 +172,8 @@ function drawBlock(g, row, i, b, x, w) {
   const d = D(), c = C(), z = FCCore.zLevels(d);
   const r = blockFrontRect(row, b, x, w);
   const id = `data-row="${row}" data-idx="${i}"`;
-  const dragged = isDragged(row, i);
-  const strokeSel = isSel(row, i) && !dragged
+  const dragged = isDragged(activeSide, row, i);
+  const strokeSel = isSel(activeSide, row, i) && !dragged
     ? `stroke="#5b9dff" stroke-width="2"` : `stroke="#0e0f12" stroke-width="0.5"`;
 
   if (dragged) {           // блок в ряду на время перетаскивания — контур
@@ -176,7 +182,7 @@ function drawBlock(g, row, i, b, x, w) {
     return;
   }
   if (b.type === "gap") {
-    const on = isSel(row, i);
+    const on = isSel(activeSide, row, i);
     g.push(`<g ${id} class="blk">` +
       R(X(r.x), Yz(r.z + r.h), r.w * fx.s, r.h * fx.s, "#ffffff06",
         `stroke="${on ? "#5b9dff" : "#565e6a"}" stroke-width="${on ? 2 : 1}" stroke-dasharray="5 4"`) +
@@ -201,13 +207,15 @@ function renderFront() {
   const g = [];
 
   // комната (при «Убрать стены и пол» — только контур-ориентир)
-  g.push(R(X(0), Yz(room.height), room.length * fx.s, room.height * fx.s,
+  const wl = fx.wl;
+  g.push(R(X(0), Yz(room.height), wl * fx.s, room.height * fx.s,
     room.noShell ? "none" : c.walls + "12",
     `stroke="#31363f" stroke-width="1" ${room.noShell ? 'stroke-dasharray="6 5"' : ""}`));
-  g.push(L(X(0), Yz(0), X(room.length), Yz(0), "#4a505a", `stroke-width="1.5"`));
+  g.push(L(X(0), Yz(0), X(wl), Yz(0), "#4a505a", `stroke-width="1.5"`));
 
-  const lower = placedOf("lower");
-  const upper = P.kitchen.upper.enabled ? placedOf("upper") : [];
+  const upperEnabled = sideCfg(activeSide).upper.enabled;
+  const lower = placedOf(activeSide, "lower");
+  const upper = upperEnabled ? placedOf(activeSide, "upper") : [];
 
   // цоколь / фартук / столешница
   for (const [x1, x2] of FCCore.runs(lower, FCCore.hasPlinth))
@@ -222,7 +230,7 @@ function renderFront() {
   for (let i = 0; i < lower.length; i++) drawBlock(g, "lower", i, lower[i].b, lower[i].x, lower[i].w);
   for (let i = 0; i < upper.length; i++) drawBlock(g, "upper", i, upper[i].b, upper[i].x, upper[i].w);
 
-  if (P.kitchen.upper.enabled && P.kitchen.upper.antresol && upper.length) {
+  if (upperEnabled && sideCfg(activeSide).upper.antresol && upper.length) {
     const e = FCCore.rowExtent(upper);
     g.push(R(X(e.start), Yz(z.zUpperTop + d.gap + d.antresolHeight),
       (e.end - e.start) * fx.s, d.antresolHeight * fx.s, c.upper + "cc"));
@@ -230,7 +238,7 @@ function renderFront() {
 
   // размерные подписи (кликабельные)
   for (const row of ["lower", "upper"]) {
-    if (row === "upper" && !P.kitchen.upper.enabled) continue;
+    if (row === "upper" && !upperEnabled) continue;
     const placed = row === "lower" ? lower : upper;
     const yLab = row === "lower" ? fx.oyFloor + 16 : Yz(z.zUpperTop) - 6;
     for (let i = 0; i < placed.length; i++) {
@@ -270,13 +278,13 @@ function renderFront() {
     const placed = palDrag.row === "lower" ? lower : upper;
     const xIns = palDrag.insertIdx < placed.length
       ? placed[palDrag.insertIdx].x - d.gap / 2
-      : (placed.length ? FCCore.rowExtent(placed).end + d.gap / 2 : rowX0(palDrag.row));
+      : (placed.length ? FCCore.rowExtent(placed).end + d.gap / 2 : rowX0(activeSide, palDrag.row));
     const band = palDrag.row === "lower" ? [0, z.zLowerTop] : [z.zUpper, z.zUpperTop];
     g.push(L(X(xIns), Yz(band[1] + 60), X(xIns), Yz(band[0]) + 8, "#5b9dff", `stroke-width="2.5"`));
   }
 
   if (ia && ia.kind === "move") {
-    const arr = P.kitchen[ia.row].blocks, b = arr[ia.idx];
+    const arr = blocksOf(activeSide, ia.row), b = arr[ia.idx];
     const r = blockFrontRect(ia.row, b, ia.mm - ia.grabDx, +b.width || 600);
     const fill = ia.outside ? "#ff6b6b88" : (ia.row === "upper" ? C().upper : C().lower) + "99";
     g.push(R(X(r.x), Yz(r.z + r.h), r.w * fx.s, r.h * fx.s, fill,
@@ -288,37 +296,61 @@ function renderFront() {
   svg.innerHTML = g.join("");
 }
 
-/* ============================= вид сверху ============================= */
+/* ============================= вид сверху =============================
+   Рисует все стороны кухни — здесь видна форма раскладки («Г», «П»).
+   Клик по блоку выделяет его и переключает активную стену. */
 function renderTop() {
   const svg = $("#svgTop"), box = svg.getBoundingClientRect();
   const room = P.room, d = D(), c = C();
   const m = 22;
   const s = Math.min((box.width - 2 * m) / room.length, (box.height - 2 * m) / room.width);
   const Xt = mm => m + mm * s, Yt = mm => m + mm * s;
+  const MR = (side, x, y, w, dd) => FCCore.mapRect(side, room, x, y, w, dd);
+  const rr = (r, fill, extra = "") => R(Xt(r.x), Yt(r.y), r.w * s, r.d * s, fill, extra);
   const g = [];
+
   g.push(R(Xt(0), Yt(0), room.length * s, room.width * s,
     room.noShell ? "none" : c.floor + "20",
     `stroke="#31363f" ${room.noShell ? 'stroke-dasharray="6 5"' : ""}`));
-  const lower = placedOf("lower");
-  for (const [x1, x2] of FCCore.runs(lower, FCCore.underCT))
-    g.push(R(Xt(x1) - 2, Yt(0), (x2 - x1) * s + 4, (d.lowerDepth + d.countertopOverhang) * s, c.countertop + "77"));
-  for (let i = 0; i < lower.length; i++) {
-    const { b, x, w } = lower[i];
-    const st = isSel("lower", i) ? `stroke="#5b9dff" stroke-width="2"` : `stroke="#0e0f12" stroke-width="0.5"`;
-    if (b.type === "gap")
-      g.push(`<g data-row="lower" data-idx="${i}">` + R(Xt(x), Yt(0), w * s, d.lowerDepth * s, "#ffffff06",
-        `stroke="${isSel("lower", i) ? "#5b9dff" : "#565e6a"}" stroke-dasharray="5 4"`) + `</g>`);
-    else
-      g.push(`<g data-row="lower" data-idx="${i}">` + R(Xt(x), Yt(0), w * s, d.lowerDepth * s, c.lower, st) + `</g>`);
-  }
-  if (P.kitchen.upper.enabled)
-    for (let i = 0; i < placedOf("upper").length; i++) {
-      const { b, x, w } = placedOf("upper")[i];
-      if (b.type !== "gap")
-        g.push(`<g data-row="upper" data-idx="${i}">` +
-          R(Xt(x), Yt(0), w * s, d.upperDepth * s, c.upper + "55",
-            isSel("upper", i) ? `stroke="#5b9dff" stroke-width="2"` : "") + `</g>`);
+
+  for (const side of FCCore.sidesOf(P)) {
+    const cfg = sideCfg(side);
+    if (!cfg) continue;
+    const lower = placedOf(side, "lower");
+    const activeMark = side === activeSide && FCCore.sidesOf(P).length > 1;
+
+    for (const [x1, x2] of FCCore.runs(lower, FCCore.underCT))
+      g.push(rr(MR(side, x1, 0, x2 - x1, d.lowerDepth + d.countertopOverhang), c.countertop + "77"));
+
+    for (let i = 0; i < lower.length; i++) {
+      const { b, x, w } = lower[i];
+      const attrs = `data-side="${side}" data-row="lower" data-idx="${i}"`;
+      const on = isSel(side, "lower", i);
+      const r = MR(side, x, 0, w, d.lowerDepth);
+      if (b.type === "gap")
+        g.push(`<g ${attrs}>` + rr(r, "#ffffff06",
+          `stroke="${on ? "#5b9dff" : "#565e6a"}" stroke-dasharray="5 4"${on ? ' stroke-width="2"' : ""}`) + `</g>`);
+      else
+        g.push(`<g ${attrs}>` + rr(r, c.lower,
+          on ? `stroke="#5b9dff" stroke-width="2"` : `stroke="#0e0f12" stroke-width="0.5"`) + `</g>`);
     }
+    if (cfg.upper.enabled) {
+      const upper = placedOf(side, "upper");
+      for (let i = 0; i < upper.length; i++) {
+        const { b, x, w } = upper[i];
+        if (b.type === "gap") continue;
+        g.push(`<g data-side="${side}" data-row="upper" data-idx="${i}">` +
+          rr(MR(side, x, 0, w, d.upperDepth), c.upper + "55",
+            isSel(side, "upper", i) ? `stroke="#5b9dff" stroke-width="2"` : "") + `</g>`);
+      }
+    }
+    // подсветка активной стены
+    if (activeMark) {
+      const wlen = FCCore.wallLength(P, side);
+      const band = MR(side, 0, 0, wlen, 8);
+      g.push(rr(band, "#5b9dff88"));
+    }
+  }
   svg.innerHTML = g.join("");
 }
 
@@ -359,9 +391,10 @@ function renderSide() {
     if (t !== "tall") {
       g.push(R(Xs(0), Ys(z.zCtTop), (d.lowerDepth + d.countertopOverhang) * s, d.countertopThickness * s, c.countertop));
       g.push(R(Xs(0), Ys(z.zUpper), d.backsplashThickness * s, d.backsplashGap * s, c.backsplash));
-      if (P.kitchen.upper.enabled) {
+      const su = sideCfg(sel ? sel.side : activeSide).upper;
+      if (su.enabled) {
         g.push(R(Xs(0), Ys(z.zUpperTop), d.upperDepth * s, d.upperHeight * s, c.upper));
-        if (P.kitchen.upper.antresol)
+        if (su.antresol)
           g.push(R(Xs(0), Ys(z.zUpperTop + d.gap + d.antresolHeight), d.upperDepth * s, d.antresolHeight * s, c.upper + "cc"));
       }
     }
@@ -382,7 +415,8 @@ function renderInspector() {
   $("#inspEmpty").style.display = b ? "none" : "";
   $("#inspector").style.display = b ? "" : "none";
   if (!b) return;
-  $("#iType").textContent = FCCore.TYPE_RU[b.type] + (sel.row === "upper" ? " · верх" : " · низ");
+  const sideTag = FCCore.sidesOf(P).length > 1 ? " · " + FCCore.SIDE_RU[sel.side] : "";
+  $("#iType").textContent = FCCore.TYPE_RU[b.type] + (sel.row === "upper" ? " · верх" : " · низ") + sideTag;
   $("#iWidth").value = b.width;
   $("#rDrawers").style.display = b.type === "drawers" ? "" : "none";
   $("#iDrawers").value = b.drawers || 3;
@@ -393,10 +427,11 @@ function renderInspector() {
 }
 
 function renderStatus() {
-  const lower = FCCore.rowExtent(placedOf("lower"));
-  const upper = P.kitchen.upper.enabled ? FCCore.rowExtent(placedOf("upper")) : null;
+  const lower = FCCore.rowExtent(placedOf(activeSide, "lower"));
+  const upper = sideCfg(activeSide).upper.enabled ? FCCore.rowExtent(placedOf(activeSide, "upper")) : null;
+  const tag = FCCore.sidesOf(P).length > 1 ? FCCore.SIDE_RU[activeSide] + ": " : "";
   $("#sbSums").textContent =
-    `низ ${lower.end} / ${P.room.length} мм` + (upper ? ` · верх ${upper.end} мм` : "");
+    tag + `низ ${lower.end} / ${FCCore.wallLength(P, activeSide)} мм` + (upper ? ` · верх ${upper.end} мм` : "");
   const warns = FCCore.validate(P);
   const w = $("#sbWarn");
   w.textContent = warns[0] || "";
@@ -421,8 +456,27 @@ function renderHeader() {
     : "Сначала подключите папку FlatCraft (кнопка «Папка…»)";
 }
 
+function renderTabs() {
+  const host = $("#wallTabs");
+  const sides = FCCore.sidesOf(P);
+  if (sides.length < 2) { host.innerHTML = ""; host.style.display = "none"; return; }
+  host.style.display = "flex";
+  host.innerHTML = sides.map(s =>
+    `<button data-tab="${s}" class="${s === activeSide ? "active" : ""}">${FCCore.SIDE_RU[s]}</button>`).join("");
+}
+$("#wallTabs").addEventListener("click", e => {
+  const b = e.target.closest("[data-tab]");
+  if (!b || b.dataset.tab === activeSide) return;
+  activeSide = b.dataset.tab;
+  sel = null; ia = null;
+  view.zoom = 1; view.panX = 0; view.panY = 0;
+  syncPanelInputs();
+  renderAll();
+});
+
 function renderAll() {
   clampSel();
+  renderTabs();
   renderFront(); renderTop(); renderSide(); renderInspector(); renderStatus(); renderHeader();
 }
 
@@ -467,9 +521,9 @@ const svgFront = $("#svgFront");
 function edgesForResize(row) {
   const other = row === "lower" ? "upper" : "lower";
   const edges = [];
-  if (other !== "upper" || P.kitchen.upper.enabled)
-    for (const { x, w } of placedOf(other)) edges.push(x, x + w);
-  edges.push(P.room.length);
+  if (other !== "upper" || sideCfg(activeSide).upper.enabled)
+    for (const { x, w } of placedOf(activeSide, other)) edges.push(x, x + w);
+  edges.push(FCCore.wallLength(P, activeSide));
   return edges;
 }
 
@@ -488,17 +542,17 @@ svgFront.addEventListener("pointerdown", e => {
 
   if (handle) {
     const row = handle.dataset.row, idx = +handle.dataset.idx;
-    sel = { row, idx };
-    const placed = placedOf(row)[idx];
+    sel = { side: activeSide, row, idx };
+    const placed = placedOf(activeSide, row)[idx];
+    const fr = blockFrontRect(row, placed.b, placed.x, placed.w);
     ia = { kind: "resize", row, idx, blockX: placed.x, startW: placed.w,
-           guideX: null, tipX: placed.x + placed.w, tipZ: blockFrontRect(row, placed.b, placed.x, placed.w).z +
-           blockFrontRect(row, placed.b, placed.x, placed.w).h, tipText: String(placed.w) };
+           guideX: null, tipX: placed.x + placed.w, tipZ: fr.z + fr.h, tipText: String(placed.w) };
     renderAll();
     return;
   }
   if (blockEl) {
     const row = blockEl.dataset.row, idx = +blockEl.dataset.idx;
-    const placed = placedOf(row)[idx];
+    const placed = placedOf(activeSide, row)[idx];
     ia = { kind: "maybe", row, idx, sx: e.clientX, sy: e.clientY,
            grabDx: pxToMmX(e.clientX) - placed.x };
   }
@@ -517,25 +571,25 @@ svgFront.addEventListener("pointermove", e => {
   }
   if (ia.kind === "maybe") {
     if (Math.abs(e.clientX - ia.sx) + Math.abs(e.clientY - ia.sy) < 5) return;
-    sel = { row: ia.row, idx: ia.idx };
+    sel = { side: activeSide, row: ia.row, idx: ia.idx };
     ia = { kind: "move", row: ia.row, idx: ia.idx, grabDx: ia.grabDx, mm: pxToMmX(e.clientX), outside: false };
   }
   if (ia.kind === "move") {
     ia.mm = pxToMmX(e.clientX);
     const b = fx.box;
     ia.outside = e.clientY < b.top - 4 || e.clientY > b.bottom + 4 || e.clientX < b.left - 4 || e.clientX > b.right + 4;
-    const arr = P.kitchen[ia.row].blocks;
-    const ni = FCCore.insertIndexAt(arr, D().gap, rowX0(ia.row), ia.mm, ia.idx);
+    const arr = blocksOf(activeSide, ia.row);
+    const ni = FCCore.insertIndexAt(arr, D().gap, rowX0(activeSide, ia.row), ia.mm, ia.idx);
     if (ni !== ia.idx) {
       const [blk] = arr.splice(ia.idx, 1);
       arr.splice(ni, 0, blk);
-      ia.idx = ni; sel = { row: ia.row, idx: ni };
+      ia.idx = ni; sel = { side: activeSide, row: ia.row, idx: ni };
     }
     renderFront(); renderStatus();
     return;
   }
   if (ia.kind === "resize") {
-    const b = P.kitchen[ia.row].blocks[ia.idx];
+    const b = blocksOf(activeSide, ia.row)[ia.idx];
     const rawW = pxToMmX(e.clientX) - ia.blockX;
     const res = FCCore.snapWidth(rawW, ia.blockX, edgesForResize(ia.row), 10 / fx.s * 1.6, 10);
     b.width = res.w;
@@ -555,14 +609,14 @@ svgFront.addEventListener("pointerup", e => {
     return;
   }
   if (k.kind === "maybe") {
-    sel = { row: k.row, idx: k.idx };
+    sel = { side: activeSide, row: k.row, idx: k.idx };
     ia = null; renderAll();
     return;
   }
   if (k.kind === "move") {
     ia = null;
     if (k.outside) {
-      P.kitchen[k.row].blocks.splice(k.idx, 1);
+      blocksOf(activeSide, k.row).splice(k.idx, 1);
       sel = null;
       toast("Блок удалён", "ok");
     }
@@ -594,13 +648,13 @@ svgFront.addEventListener("click", e => {
   const lab = e.target.closest("[data-wlabel]");
   if (lab) {
     const [row, i] = lab.dataset.wlabel.split(":");
-    sel = { row, idx: +i }; renderAll();
+    sel = { side: activeSide, row, idx: +i }; renderAll();
     inlineWidthEdit(row, +i);
   }
 });
 
 function inlineWidthEdit(row, idx) {
-  const placed = placedOf(row)[idx];
+  const placed = placedOf(activeSide, row)[idx];
   if (!placed) return;
   const r = blockFrontRect(row, placed.b, placed.x, placed.w);
   const host = $("#viewFront");
@@ -616,7 +670,7 @@ function inlineWidthEdit(row, idx) {
     if (done) return; done = true;
     if (ok) {
       const v = Math.max(FCCore.MIN_WIDTH, Math.round(+inp.value || placed.w));
-      P.kitchen[row].blocks[idx].width = v;
+      blocksOf(activeSide, row)[idx].width = v;
       commit();
     }
     inp.remove();
@@ -629,10 +683,15 @@ function inlineWidthEdit(row, idx) {
   inp.addEventListener("blur", () => finish(true));
 }
 
-/* клик по виду сверху — выделение */
+/* клик по виду сверху — выделение (и переключение активной стены) */
 $("#svgTop").addEventListener("pointerdown", e => {
   const el = e.target.closest("[data-row]");
-  sel = el ? { row: el.dataset.row, idx: +el.dataset.idx } : null;
+  if (el) {
+    const side = el.dataset.side || activeSide;
+    if (side !== activeSide) { activeSide = side; view.zoom = 1; view.panX = 0; view.panY = 0; }
+    sel = { side, row: el.dataset.row, idx: +el.dataset.idx };
+    syncPanelInputs();
+  } else sel = null;
   renderAll();
 });
 
@@ -642,7 +701,7 @@ svgFront.addEventListener("contextmenu", e => {
   e.preventDefault();
   const el = e.target.closest("[data-row]");
   if (!el) { menu.style.display = "none"; return; }
-  sel = { row: el.dataset.row, idx: +el.dataset.idx };
+  sel = { side: activeSide, row: el.dataset.row, idx: +el.dataset.idx };
   renderAll();
   menu.style.display = "block";
   menu.style.left = Math.min(e.clientX, innerWidth - 180) + "px";
@@ -656,14 +715,14 @@ $("#cmDel").addEventListener("click", () => { menu.style.display = "none"; delet
 
 function duplicateSel() {
   if (!sel) return;
-  const arr = P.kitchen[sel.row].blocks;
+  const arr = blocksOf(sel.side, sel.row);
   arr.splice(sel.idx + 1, 0, JSON.parse(JSON.stringify(arr[sel.idx])));
-  sel = { row: sel.row, idx: sel.idx + 1 };
+  sel = { side: sel.side, row: sel.row, idx: sel.idx + 1 };
   commit();
 }
 function deleteSel() {
   if (!sel) return;
-  P.kitchen[sel.row].blocks.splice(sel.idx, 1);
+  blocksOf(sel.side, sel.row).splice(sel.idx, 1);
   sel = null;
   commit();
 }
@@ -702,10 +761,10 @@ document.addEventListener("pointermove", e => {
     const band = palDrag.row === "lower"
       ? mmZ > -300 && mmZ < z.zCt + 200
       : mmZ > z.zCtTop && mmZ < z.zUpperTop + 400;
-    if (band && (palDrag.row === "lower" || P.kitchen.upper.enabled)) {
+    if (band && (palDrag.row === "lower" || sideCfg(activeSide).upper.enabled)) {
       valid = true;
       palDrag.insertIdx = FCCore.insertIndexAt(
-        P.kitchen[palDrag.row].blocks, D().gap, rowX0(palDrag.row), pxToMmX(e.clientX));
+        blocksOf(activeSide, palDrag.row), D().gap, rowX0(activeSide, palDrag.row), pxToMmX(e.clientX));
     }
   }
   palDrag.valid = valid;
@@ -719,17 +778,17 @@ document.addEventListener("pointerup", e => {
   palDrag = null;
   pd.ghost.remove();
   if (!pd.moved) {           // обычный клик — добавить после выделенного / в конец
-    const arr = P.kitchen[pd.row].blocks;
-    const at = sel && sel.row === pd.row ? sel.idx + 1 : arr.length;
+    const arr = blocksOf(activeSide, pd.row);
+    const at = sel && sel.side === activeSide && sel.row === pd.row ? sel.idx + 1 : arr.length;
     arr.splice(at, 0, FCCore.newBlock(pd.row, pd.type));
-    sel = { row: pd.row, idx: at };
+    sel = { side: activeSide, row: pd.row, idx: at };
     commit();
     return;
   }
   if (pd.valid) {
-    const arr = P.kitchen[pd.row].blocks;
+    const arr = blocksOf(activeSide, pd.row);
     arr.splice(pd.insertIdx, 0, FCCore.newBlock(pd.row, pd.type));
-    sel = { row: pd.row, idx: pd.insertIdx };
+    sel = { side: activeSide, row: pd.row, idx: pd.insertIdx };
     commit();
     toast("Блок добавлен", "ok");
   } else renderFront();
@@ -758,10 +817,10 @@ $("#iLeft").addEventListener("click", () => moveSel(-1));
 $("#iRight").addEventListener("click", () => moveSel(1));
 function moveSel(dir) {
   if (!sel) return;
-  const arr = P.kitchen[sel.row].blocks, j = sel.idx + dir;
+  const arr = blocksOf(sel.side, sel.row), j = sel.idx + dir;
   if (j < 0 || j >= arr.length) return;
   [arr[sel.idx], arr[j]] = [arr[j], arr[sel.idx]];
-  sel = { row: sel.row, idx: j };
+  sel = { side: sel.side, row: sel.row, idx: j };
   commit();
 }
 
@@ -774,12 +833,22 @@ function syncPanelInputs() {
     if (inp.type === "checkbox") inp.checked = !!getPath(P, inp.dataset.k);
     else inp.value = getPath(P, inp.dataset.k);
   });
+  $$("[data-s]").forEach(inp => {   // параметры активной стены
+    const v = getPath(sideCfg(activeSide), inp.dataset.s);
+    if (inp.type === "checkbox") inp.checked = !!v;
+    else inp.value = v;
+  });
   $$("[data-d]").forEach(inp => { inp.value = D()[inp.dataset.d]; });
   $$("[data-c]").forEach(inp => { inp.value = C()[inp.dataset.c]; });
+  $("#layoutLabel").textContent = FCCore.LAYOUT_RU[P.kitchen.layoutType] || "";
   $("#projName").value = P.name;
 }
 $$("[data-k]").forEach(inp => inp.addEventListener("change", () => {
   setPath(P, inp.dataset.k, inp.type === "checkbox" ? inp.checked : +inp.value || 0);
+  commit();
+}));
+$$("[data-s]").forEach(inp => inp.addEventListener("change", () => {
+  setPath(sideCfg(activeSide), inp.dataset.s, inp.type === "checkbox" ? inp.checked : +inp.value || 0);
   commit();
 }));
 $$("[data-d]").forEach(inp => inp.addEventListener("change", () => {
@@ -812,35 +881,36 @@ document.addEventListener("keyup", e => {
   if (e.code === "Space") { spaceHeld = false; $("#viewFront").classList.remove("panning"); }
 });
 function shiftSel(dir) {
-  const arr = P.kitchen[sel.row].blocks;
+  const arr = blocksOf(sel.side, sel.row);
   const j = Math.min(arr.length - 1, Math.max(0, sel.idx + dir));
-  sel = { row: sel.row, idx: j };
+  sel = { side: sel.side, row: sel.row, idx: j };
   renderAll();
 }
 
 /* ============================= менеджер проектов ============================= */
+/* миниатюра — план сверху: видна форма раскладки (прямая / Г / П) */
 function thumbSvg(p, W = 240, H = 120) {
   p = FCCore.migrate(p);
   const d = { ...FCCore.DIMS, ...p.kitchen.dims }, c = { ...FCCore.COLORS, ...p.kitchen.colors };
-  const z = FCCore.zLevels(d);
   const m = 8;
-  const s = Math.min((W - 2 * m) / p.room.length, (H - 2 * m) / p.room.height);
-  const Xs = mm => m + mm * s, Ys = mm => H - m - mm * s;
+  const s = Math.min((W - 2 * m) / p.room.length, (H - 2 * m) / p.room.width);
   const g = [`<rect width="${W}" height="${H}" fill="#1a1d23"/>`];
-  const lower = FCCore.layout(p.kitchen.lower.blocks, d.gap, +p.kitchen.offsetX || 0);
-  for (const [x1, x2] of FCCore.runs(lower, FCCore.underCT))
-    g.push(R(Xs(x1), Ys(z.zCtTop), (x2 - x1) * s, d.countertopThickness * s, c.countertop));
-  for (const { b, x, w } of lower) {
-    if (b.type === "gap") continue;
-    const h = b.type === "tall" ? z.zUpperTop - z.zLower : d.lowerHeight;
-    g.push(R(Xs(x), Ys(z.zLower + h), w * s, h * s, c.lower));
-  }
-  if (p.kitchen.upper.enabled)
-    for (const { b, x, w } of FCCore.layout(p.kitchen.upper.blocks, d.gap,
-      (+p.kitchen.offsetX || 0) + (+p.kitchen.upper.offsetX || 0))) {
-      if (b.type === "gap") continue;
-      g.push(R(Xs(x), Ys(z.zUpperTop), w * s, d.upperHeight * s, c.upper));
+  const room = p.room;
+  g.push(R(m, m, room.length * s, room.width * s, c.floor + "18", `stroke="#31363f" stroke-width="0.5"`));
+  for (const side of FCCore.sidesOf(p)) {
+    const cfg = p.kitchen.sides[side];
+    if (!cfg) continue;
+    const lower = FCCore.layout(cfg.lower.blocks, d.gap, +cfg.offsetX || 0);
+    for (const [x1, x2] of FCCore.runs(lower, FCCore.underCT)) {
+      const r = FCCore.mapRect(side, room, x1, 0, x2 - x1, d.lowerDepth + d.countertopOverhang);
+      g.push(R(m + r.x * s, m + r.y * s, r.w * s, r.d * s, c.countertop));
     }
+    for (const { b, x, w } of lower) {
+      if (b.type === "gap") continue;
+      const r = FCCore.mapRect(side, room, x, 0, w, d.lowerDepth);
+      g.push(R(m + r.x * s, m + r.y * s, r.w * s, r.d * s, c.lower));
+    }
+  }
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${g.join("")}</svg>`;
 }
 
@@ -888,13 +958,21 @@ function closeModal() { $("#modal").style.display = "none"; }
 $("#btnProjects").addEventListener("click", openModal);
 $("#modalClose").addEventListener("click", closeModal);
 $("#modal").addEventListener("pointerdown", e => { if (e.target.id === "modal") closeModal(); });
-$("#modalNew").addEventListener("click", async () => {
-  P = FCCore.defaultProject("Кухня " + new Date().toLocaleDateString("ru"));
-  dbId = null; sel = null;
+/* новый проект: сначала выбор раскладки (изменить её потом нельзя) */
+$("#modalNew").addEventListener("click", () => { $("#layoutPick").style.display = "flex"; });
+$("#layoutPick").addEventListener("pointerdown", e => {
+  if (e.target.id === "layoutPick") $("#layoutPick").style.display = "none";
+});
+$("#layoutCancel").addEventListener("click", () => { $("#layoutPick").style.display = "none"; });
+$$("#layoutPick [data-layout]").forEach(btn => btn.addEventListener("click", async () => {
+  $("#layoutPick").style.display = "none";
+  P = FCCore.defaultProject("Кухня " + new Date().toLocaleDateString("ru"), btn.dataset.layout);
+  dbId = null; sel = null; activeSide = FCCore.sidesOf(P)[0];
   await persistNow();
   undoMgr.reset(P);
   syncPanelInputs(); renderAll(); closeModal();
-});
+  toast(`Создан проект: ${FCCore.LAYOUT_RU[P.kitchen.layoutType]}`, "ok");
+}));
 $("#modalImport").addEventListener("click", () => $("#fileInput").click());
 
 async function loadRec(id) {
@@ -902,6 +980,7 @@ async function loadRec(id) {
   if (!rec) return;
   P = FCCore.migrate(rec.data);
   dbId = rec.id; sel = null; ia = null;
+  activeSide = FCCore.sidesOf(P)[0];
   await DB.setSetting("lastId", dbId);
   undoMgr.reset(P);
   syncPanelInputs(); renderAll();
@@ -925,6 +1004,7 @@ $("#fileInput").addEventListener("change", async e => {
     P = FCCore.migrate(raw);
     if (!P.name) P.name = f.name.replace(/\.json$/i, "");
     dbId = null; sel = null;
+    activeSide = FCCore.sidesOf(P)[0];
     await persistNow();
     undoMgr.reset(P);
     syncPanelInputs(); renderAll(); closeModal();
@@ -1175,6 +1255,13 @@ async function boot() {
   }
   if (rec) { P = FCCore.migrate(rec.data); dbId = rec.id; }
   else { P = FCCore.defaultProject(); await persistNow(); }
+  // ?demo=L|U — показать шаблонный проект без сохранения (для тестов/скриншотов)
+  const demo = new URLSearchParams(location.search).get("demo");
+  if (demo && FCCore.LAYOUT_SIDES[demo]) {
+    P = FCCore.defaultProject("Демо " + FCCore.LAYOUT_RU[demo], demo);
+    dbId = null;
+  }
+  activeSide = FCCore.sidesOf(P)[0];
   dirHandle = await DB.getSetting("dirHandle").catch(() => null);
   undoMgr.reset(P);
   syncPanelInputs();
@@ -1189,6 +1276,8 @@ window.FC = {
   getP: () => P,
   getSel: () => sel,
   setSel: s => { sel = s; renderAll(); },
+  getSide: () => activeSide,
+  setSide: s => { activeSide = s; sel = null; syncPanelInputs(); renderAll(); },
   fx: () => fx,
   undo: doUndo, redo: doRedo,
   commit, renderAll,

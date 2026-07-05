@@ -42,8 +42,9 @@ async function dragFront(x1, y1, x2, y2, steps = 6) {
   await sleep(30);
 }
 const P = () => FC.getP();
-const lowerBlocks = () => P().kitchen.lower.blocks;
-const placedLower = () => FC.core.layout(lowerBlocks(), P().kitchen.dims.gap || 4, +P().kitchen.offsetX || 0);
+const south = () => P().kitchen.sides.south;
+const lowerBlocks = () => south().lower.blocks;
+const placedLower = () => FC.core.layout(lowerBlocks(), P().kitchen.dims.gap || 4, +south().offsetX || 0);
 
 async function run() {
   /* ---------- ядро ---------- */
@@ -75,9 +76,28 @@ async function run() {
     ok(core.snapWidth(20, 0, [], 5).w >= core.MIN_WIDTH, "snapWidth: не уже минимума");
   }
   {
-    const m = core.migrate({ name: "x", kitchen: { lower: { blocks: [{ type: "cabinet" }] } } });
-    ok(m.room.length === 4200 && m.kitchen.dims.plinthRecess === 10 && m.kitchen.upper.blocks.length === 0,
-      "migrate: заполняет значения по умолчанию");
+    // старый формат (lower в корне kitchen) -> sides.south, layout linear
+    const m = core.migrate({ name: "x", kitchen: { offsetX: 50, lower: { blocks: [{ type: "cabinet" }] } } });
+    ok(m.room.length === 4200 && m.kitchen.dims.plinthRecess === 10
+      && m.kitchen.layoutType === "linear"
+      && m.kitchen.sides.south.lower.blocks.length === 1
+      && m.kitchen.sides.south.offsetX === 50
+      && m.kitchen.sides.south.upper.blocks.length === 0,
+      "migrate: старый формат превращается в sides.south");
+  }
+  {
+    const l = core.defaultProject("t", "L"), u = core.defaultProject("t", "U");
+    eq(Object.keys(l.kitchen.sides).sort(), ["south", "west"], "defaultProject L: стороны south+west");
+    eq(Object.keys(u.kitchen.sides).sort(), ["east", "south", "west"], "defaultProject U: три стороны");
+    ok(l.kitchen.sides.west.offsetX === core.legOffset(core.DIMS), "шаблон Г: крыло отступает от угла на столешницу");
+    eq(core.sidesOf(u), ["west", "south", "east"], "sidesOf: порядок сторон П");
+    ok(core.wallLength(l, "south") === 4200 && core.wallLength(l, "west") === 3000, "wallLength: юг по длине, запад по ширине");
+  }
+  {
+    const room = { length: 4000, width: 3000 };
+    eq(core.mapRect("south", room, 100, 0, 600, 350), { x: 100, y: 0, w: 600, d: 350 }, "mapRect: юг без поворота");
+    eq(core.mapRect("west", room, 100, 0, 600, 350), { x: 0, y: 100, w: 350, d: 600 }, "mapRect: запад повёрнут к x=0");
+    eq(core.mapRect("east", room, 100, 0, 600, 350), { x: 3650, y: 100, w: 350, d: 600 }, "mapRect: восток прижат к x=length");
   }
   {
     const u = new core.Undo(10);
@@ -108,7 +128,7 @@ async function run() {
     ptEv("pointerdown", at(cx, cy), cx, cy);
     ptEv("pointerup", svg, cx, cy);
     await sleep(30);
-    eq(FC.getSel(), { row: "lower", idx: 1 }, "UI: клик выделяет блок");
+    eq(FC.getSel(), { side: "south", row: "lower", idx: 1 }, "UI: клик выделяет блок");
   }
 
   { // перетаскивание: блок 0 (ящики) вправо за центр блока 1
@@ -127,7 +147,7 @@ async function run() {
   }
 
   { // ресайз за правую ручку
-    FC.setSel({ row: "lower", idx: 1 });
+    FC.setSel({ side: "south", row: "lower", idx: 1 });
     await sleep(30);
     const handle = svg.querySelector("[data-handle]");
     ok(handle, "UI: у выделенного блока есть ручка ресайза");

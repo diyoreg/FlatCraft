@@ -17,52 +17,162 @@ const FCCore = (() => {
   const STD_WIDTHS = [150, 200, 300, 400, 450, 500, 600, 700, 800, 900, 1000, 1200];
   const MIN_WIDTH = 100;
 
-  function defaultProject(name) {
+  /* Раскладки: какие стороны есть у кухни. Вид сверху (южная стена сверху,
+     западная слева, восточная справа) повторяет форму буквы: Г, П. */
+  const LAYOUT_SIDES = {
+    linear: ["south"],
+    L: ["south", "west"],
+    U: ["west", "south", "east"],
+  };
+  const LAYOUT_RU = { linear: "Обычная (прямая)", L: "Г-образная", U: "П-образная" };
+  const SIDE_RU = { south: "Главная", west: "Левая", east: "Правая" };
+
+  /* Отступ бокового крыла от угла: столешница главной стены (глубина + вылет)
+     + зазор, чтобы столешницы стыковались без пересечений. */
+  const legOffset = d => d.lowerDepth + d.countertopOverhang + d.gap;          // 644
+  const legUpperOffset = d => (d.upperDepth + d.gap) - legOffset(d);           // -290
+
+  function emptySide(offsetX = 0) {
+    return {
+      offsetX,
+      lower: { blocks: [] },
+      upper: { enabled: true, offsetX: 0, antresol: false, blocks: [] },
+    };
+  }
+
+  function defaultProject(name, layout = "linear") {
+    if (!LAYOUT_SIDES[layout]) layout = "linear";
+    const d = { ...DIMS };
+    const lo = legOffset(d), uo = legUpperOffset(d);
+
+    const southMain = {
+      offsetX: 0,
+      lower: { blocks: [
+        { type: "drawers", width: 600, drawers: 3 },
+        { type: "cabinet", width: 600 },
+        { type: "gap", width: 600, tall: false, label: "плита" },
+        { type: "cabinet", width: 600 },
+      ]},
+      upper: { enabled: true, offsetX: 0, antresol: false, blocks: [
+        { type: "cabinet", width: 600 },
+        { type: "cabinet", width: 600 },
+        { type: "gap", width: 600, label: "вытяжка" },
+        { type: "cabinet", width: 600 },
+      ]},
+    };
+
+    const sides = {};
+    if (layout === "linear") {
+      sides.south = JSON.parse(JSON.stringify(southMain));
+      sides.south.lower.blocks.push(
+        { type: "tall", width: 600, label: "пенал" },
+        { type: "gap", width: 700, tall: true, label: "холодильник" });
+    } else if (layout === "L") {
+      sides.south = JSON.parse(JSON.stringify(southMain));
+      sides.south.lower.blocks.push(
+        { type: "tall", width: 600, label: "пенал" },
+        { type: "gap", width: 700, tall: true, label: "холодильник" });
+      sides.west = {
+        offsetX: lo,
+        lower: { blocks: [
+          { type: "cabinet", width: 600, label: "" },
+          { type: "gap", width: 600, tall: false, label: "посудомойка" },
+          { type: "cabinet", width: 600 },
+        ]},
+        upper: { enabled: true, offsetX: uo, antresol: false, blocks: [
+          { type: "cabinet", width: 600 },
+          { type: "cabinet", width: 600 },
+        ]},
+      };
+    } else { // U
+      sides.west = {
+        offsetX: lo,
+        lower: { blocks: [
+          { type: "gap", width: 700, tall: true, label: "холодильник" },
+          { type: "tall", width: 600, label: "пенал" },
+          { type: "cabinet", width: 600 },
+        ]},
+        upper: { enabled: true, offsetX: 700 + d.gap + 600 + d.gap, antresol: false, blocks: [
+          { type: "cabinet", width: 600 },
+        ]},
+      };
+      sides.south = JSON.parse(JSON.stringify(southMain));
+      sides.east = {
+        offsetX: lo,
+        lower: { blocks: [
+          { type: "cabinet", width: 600 },
+          { type: "gap", width: 600, tall: false, label: "посудомойка" },
+          { type: "drawers", width: 600, drawers: 3 },
+        ]},
+        upper: { enabled: true, offsetX: uo, antresol: false, blocks: [
+          { type: "cabinet", width: 600 },
+          { type: "cabinet", width: 600 },
+        ]},
+      };
+    }
+
     return {
       formatVersion: 2,
       name: name || "Новая кухня",
       units: "mm",
       room: { length: 4200, width: 3000, height: 2700, wallThickness: 400, ceiling: false, noShell: false },
       kitchen: {
-        wall: "south", offsetX: 0,
+        layoutType: layout,
+        wall: "south",
         dims: { ...DIMS },
-        lower: { blocks: [
-          { type: "drawers", width: 600, drawers: 3 },
-          { type: "cabinet", width: 600 },
-          { type: "gap", width: 600, tall: false, label: "плита" },
-          { type: "cabinet", width: 600 },
-          { type: "tall", width: 600, label: "пенал" },
-          { type: "gap", width: 700, tall: true, label: "холодильник" },
-        ]},
-        upper: { enabled: true, offsetX: 0, antresol: false, blocks: [
-          { type: "cabinet", width: 600 },
-          { type: "cabinet", width: 600 },
-          { type: "gap", width: 600, label: "вытяжка" },
-          { type: "cabinet", width: 600 },
-        ]},
+        sides,
         colors: { ...COLORS },
       },
     };
   }
 
-  /* Заполнить недостающие поля (старые сохранения, импорт) */
+  /* Заполнить недостающие поля; старый формат (lower/upper в корне kitchen)
+     превращается в sides.south, layoutType = linear. */
   function migrate(p) {
+    if (!p || typeof p !== "object") return defaultProject();
     const d = defaultProject();
-    if (!p || typeof p !== "object") return d;
     const out = { ...d, ...p };
     out.room = { ...d.room, ...(p.room || {}) };
-    out.kitchen = { ...d.kitchen, ...(p.kitchen || {}) };
-    out.kitchen.dims = { ...DIMS, ...((p.kitchen || {}).dims || {}) };
-    out.kitchen.colors = { ...COLORS, ...((p.kitchen || {}).colors || {}) };
-    out.kitchen.lower = { blocks: (((p.kitchen || {}).lower || {}).blocks || []).map(b => ({ ...b })) };
-    // отсутствующий верхний ряд = пустой (как трактует и сборщик), а не ряд по умолчанию
-    out.kitchen.upper = { enabled: true, offsetX: 0, antresol: false, ...((p.kitchen || {}).upper || {}) };
-    out.kitchen.upper.blocks = (((p.kitchen || {}).upper || {}).blocks || []).map(b => ({ ...b }));
+    const k = p.kitchen || {};
+    out.kitchen = {
+      layoutType: LAYOUT_SIDES[k.layoutType] ? k.layoutType : "linear",
+      wall: "south",
+      dims: { ...DIMS, ...(k.dims || {}) },
+      colors: { ...COLORS, ...(k.colors || {}) },
+      sides: {},
+    };
+    const srcSides = k.sides || (k.lower || k.upper
+      ? { south: { offsetX: k.offsetX || 0, lower: k.lower, upper: k.upper } }
+      : {});
+    if (!LAYOUT_SIDES[k.layoutType] && k.sides) {
+      // раскладка не указана, но стороны есть — определить по ним
+      const have = Object.keys(k.sides);
+      out.kitchen.layoutType = have.length >= 3 ? "U" : (have.length === 2 ? "L" : "linear");
+    }
+    for (const side of LAYOUT_SIDES[out.kitchen.layoutType]) {
+      const s = srcSides[side] || {};
+      const norm = emptySide(+s.offsetX || 0);
+      norm.lower.blocks = (((s.lower) || {}).blocks || []).map(b => ({ ...b }));
+      norm.upper = { enabled: true, offsetX: 0, antresol: false, ...(s.upper || {}) };
+      norm.upper.blocks = (((s.upper) || {}).blocks || []).map(b => ({ ...b }));
+      out.kitchen.sides[side] = norm;
+    }
     out.formatVersion = 2;
     return out;
   }
 
-  /* ---------- раскладка (зеркало fc_builder.py) ---------- */
+  const sidesOf = p => LAYOUT_SIDES[p.kitchen.layoutType] || ["south"];
+  const wallLength = (p, side) => side === "south" ? +p.room.length : +p.room.width;
+
+  /* Локальные координаты стороны (x вдоль стены от угла, y — глубина от стены)
+     -> мировые (вид сверху, южная стена у y=0). */
+  function mapRect(side, room, x, y, w, d) {
+    if (side === "west") return { x: y, y: x, w: d, d: w };
+    if (side === "east") return { x: room.length - y - d, y: x, w: d, d: w };
+    return { x, y, w, d };
+  }
+
+  /* ---------- раскладка ряда (зеркало fc_builder.py) ---------- */
   function layout(blocks, gap, x0) {
     const out = []; let x = +x0 || 0;
     for (const b of blocks) {
@@ -100,8 +210,6 @@ const FCCore = (() => {
     return { start: placed[0].x, end: last.x + last.w };
   }
 
-  /* Индекс вставки при перетаскивании: сколько центров блоков левее точки.
-     excludeIdx — индекс перетаскиваемого блока (не учитывается). */
   function insertIndexAt(blocks, gap, x0, mm, excludeIdx = -1) {
     const placed = layout(blocks, gap, x0);
     let idx = 0;
@@ -110,14 +218,8 @@ const FCCore = (() => {
     return idx;
   }
 
-  /* Притяжка ширины при ресайзе.
-     rawW — сырая ширина по курсору; blockX — левый край блока;
-     edges — x-координаты краёв блоков другого ряда (для выравнивания);
-     tolMm — радиус притяжки; step — шаг округления без притяжки. */
   function snapWidth(rawW, blockX, edges, tolMm, step = 10) {
-    let best = null; // {w, guideX, why, dist}
-    // выравнивание по краям соседнего ряда — приоритетно (при равном
-    // расстоянии показываем направляющую, а не просто стандартный размер)
+    let best = null;
     for (const e of edges || []) {
       const w = e - blockX;
       if (w < MIN_WIDTH) continue;
@@ -134,25 +236,27 @@ const FCCore = (() => {
     return { w: Math.max(MIN_WIDTH, Math.round(rawW / step) * step), guideX: null, why: "step", dist: 0 };
   }
 
-  /* Проверки проекта: список предупреждений */
   function validate(p) {
     const warn = [];
     const d = { ...DIMS, ...p.kitchen.dims };
-    const lp = layout(p.kitchen.lower.blocks, d.gap, +p.kitchen.offsetX || 0);
-    const le = rowExtent(lp);
-    if (le.end > p.room.length)
-      warn.push(`Нижний ряд (${le.end} мм) шире комнаты (${p.room.length} мм)`);
-    if (p.kitchen.upper.enabled) {
-      const up = layout(p.kitchen.upper.blocks, d.gap,
-        (+p.kitchen.offsetX || 0) + (+p.kitchen.upper.offsetX || 0));
-      const ue = rowExtent(up);
-      if (ue.end > p.room.length)
-        warn.push(`Верхний ряд (${ue.end} мм) шире комнаты (${p.room.length} мм)`);
+    for (const side of sidesOf(p)) {
+      const s = p.kitchen.sides[side];
+      if (!s) continue;
+      const lim = wallLength(p, side);
+      const label = SIDE_RU[side];
+      const le = rowExtent(layout(s.lower.blocks, d.gap, +s.offsetX || 0));
+      if (le.end > lim)
+        warn.push(`${label}: нижний ряд ${le.end} мм не влезает в стену ${lim} мм`);
+      if (s.upper.enabled) {
+        const ue = rowExtent(layout(s.upper.blocks, d.gap, (+s.offsetX || 0) + (+s.upper.offsetX || 0)));
+        if (ue.end > lim)
+          warn.push(`${label}: верхний ряд ${ue.end} мм не влезает в стену ${lim} мм`);
+      }
+      for (const row of ["lower", "upper"])
+        for (const b of s[row].blocks)
+          if (!(+b.width >= MIN_WIDTH))
+            warn.push(`${label}: блок «${TYPE_RU[b.type] || b.type}» уже ${MIN_WIDTH} мм`);
     }
-    for (const row of ["lower", "upper"])
-      for (const b of p.kitchen[row].blocks)
-        if (!(+b.width >= MIN_WIDTH))
-          warn.push(`Блок «${TYPE_RU[b.type] || b.type}» уже ${MIN_WIDTH} мм`);
     return warn;
   }
 
@@ -186,7 +290,9 @@ const FCCore = (() => {
 
   return {
     DIMS, COLORS, TYPE_RU, STD_WIDTHS, MIN_WIDTH,
-    defaultProject, migrate, layout, runs, underCT, hasPlinth, zLevels,
+    LAYOUT_SIDES, LAYOUT_RU, SIDE_RU, legOffset, legUpperOffset,
+    defaultProject, migrate, sidesOf, wallLength, mapRect,
+    layout, runs, underCT, hasPlinth, zLevels,
     rowExtent, insertIndexAt, snapWidth, validate, Undo, newBlock, slug,
   };
 })();

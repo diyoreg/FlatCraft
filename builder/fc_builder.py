@@ -151,11 +151,37 @@ class Builder(object):
             runs.append((start, end))
         return runs
 
-    def build_kitchen(self):
+    SIDE_RU = {"south": "Юг", "west": "Запад", "east": "Восток"}
+
+    def _sides(self):
+        """Нормализация: и новый формат (kitchen.sides), и старый (lower/upper в корне)."""
         k = self.p.get("kitchen", {})
+        sides = k.get("sides")
+        if not sides:
+            sides = {"south": {
+                "offsetX": k.get("offsetX", 0),
+                "lower": k.get("lower", {}),
+                "upper": k.get("upper", {}),
+            }}
+        return sides
+
+    def _map(self, side, x, y, w, d):
+        """Локальные координаты стороны (x вдоль стены от угла, y — глубина
+        от стены) -> мировой мин-угол и габариты по X/Y."""
+        L = float(self.p.get("room", {}).get("length", 4000))
+        if side == "west":
+            return (y, x, d, w)
+        if side == "east":
+            return (L - y - d, x, d, w)
+        return (x, y, w, d)
+
+    def mbox(self, name, side, x, y, w, dd, h, z, mat_key):
+        wx, wy, ww, wd = self._map(side, x, y, w, dd)
+        self.box(name, ww, wd, h, wx, wy, z, mat_key)
+
+    def build_kitchen(self):
         d = self.dims
         gap = d["gap"]
-        offset = float(k.get("offsetX", 0))
 
         z_lower = d["plinthHeight"]
         z_lower_top = z_lower + d["lowerHeight"]
@@ -164,59 +190,66 @@ class Builder(object):
         z_upper = z_ct_top + d["backsplashGap"]
         z_upper_top = z_upper + d["upperHeight"]
 
-        # --- нижний ряд -------------------------------------------------
-        lower = self._layout(k.get("lower", {}).get("blocks", []), gap, offset)
-        for i, (b, x, w) in enumerate(lower, 1):
-            btype = b.get("type", "cabinet")
-            if btype == "cabinet":
-                self.box("Низ_{}_шкаф".format(i), w, d["lowerDepth"], d["lowerHeight"], x, 0, z_lower, "lower")
-            elif btype == "drawers":
-                n = max(1, int(b.get("drawers", 3)))
-                dh = (d["lowerHeight"] - (n - 1) * gap) / n
-                for j in range(n):
-                    self.box("Низ_{}_ящик{}".format(i, j + 1), w, d["lowerDepth"], dh,
-                             x, 0, z_lower + j * (dh + gap), "lower")
-            elif btype == "tall":
-                self.box("Низ_{}_пенал".format(i), w, d["lowerDepth"], z_upper_top - z_lower, x, 0, z_lower, "lower")
-            elif btype == "gap":
-                pass  # проём под технику — пустое место
-            else:
-                print("FlatCraft: неизвестный тип блока '{}' — пропущен".format(btype))
+        for side, cfg in self._sides().items():
+            tag = self.SIDE_RU.get(side, side)
+            offset = float(cfg.get("offsetX", 0))
 
-        # столешница и фартук: над шкафами/ящиками и невысокими проёмами,
-        # разрыв на пеналах и высоких проёмах (холодильник)
-        def under_countertop(b):
-            return b.get("type") in ("cabinet", "drawers") or (
-                b.get("type") == "gap" and not b.get("tall", False))
+            # --- нижний ряд ---------------------------------------------
+            lower = self._layout(cfg.get("lower", {}).get("blocks", []), gap, offset)
+            for i, (b, x, w) in enumerate(lower, 1):
+                btype = b.get("type", "cabinet")
+                if btype == "cabinet":
+                    self.mbox("Низ_{}_{}_шкаф".format(tag, i), side, x, 0, w, d["lowerDepth"],
+                              d["lowerHeight"], z_lower, "lower")
+                elif btype == "drawers":
+                    n = max(1, int(b.get("drawers", 3)))
+                    dh = (d["lowerHeight"] - (n - 1) * gap) / n
+                    for j in range(n):
+                        self.mbox("Низ_{}_{}_ящик{}".format(tag, i, j + 1), side, x, 0, w,
+                                  d["lowerDepth"], dh, z_lower + j * (dh + gap), "lower")
+                elif btype == "tall":
+                    self.mbox("Низ_{}_{}_пенал".format(tag, i), side, x, 0, w, d["lowerDepth"],
+                              z_upper_top - z_lower, z_lower, "lower")
+                elif btype == "gap":
+                    pass  # проём под технику — пустое место
+                else:
+                    print("FlatCraft: неизвестный тип блока '{}' — пропущен".format(btype))
 
-        for j, (x1, x2) in enumerate(self._runs(lower, under_countertop), 1):
-            self.box("Столешница_{}".format(j), x2 - x1, d["lowerDepth"] + d["countertopOverhang"],
-                     d["countertopThickness"], x1, 0, z_ct, "countertop")
-            self.box("Фартук_{}".format(j), x2 - x1, d["backsplashThickness"],
-                     d["backsplashGap"], x1, 0, z_ct_top, "backsplash")
+            # столешница и фартук: разрыв на пеналах и высоких проёмах
+            def under_countertop(b):
+                return b.get("type") in ("cabinet", "drawers") or (
+                    b.get("type") == "gap" and not b.get("tall", False))
 
-        # цоколь: под всем рядом, разрыв только на высоких проёмах
-        def has_plinth(b):
-            return not (b.get("type") == "gap" and b.get("tall", False))
+            for j, (x1, x2) in enumerate(self._runs(lower, under_countertop), 1):
+                self.mbox("Столешница_{}_{}".format(tag, j), side, x1, 0, x2 - x1,
+                          d["lowerDepth"] + d["countertopOverhang"],
+                          d["countertopThickness"], z_ct, "countertop")
+                self.mbox("Фартук_{}_{}".format(tag, j), side, x1, 0, x2 - x1,
+                          d["backsplashThickness"], d["backsplashGap"], z_ct_top, "backsplash")
 
-        for j, (x1, x2) in enumerate(self._runs(lower, has_plinth), 1):
-            self.box("Цоколь_{}".format(j), x2 - x1, d["lowerDepth"] - d["plinthRecess"],
-                     d["plinthHeight"], x1, 0, 0, "plinth")
+            # цоколь: разрыв только на высоких проёмах
+            def has_plinth(b):
+                return not (b.get("type") == "gap" and b.get("tall", False))
 
-        # --- верхний ряд ------------------------------------------------
-        upper_cfg = k.get("upper", {})
-        if upper_cfg.get("enabled", True) and upper_cfg.get("blocks"):
-            upper = self._layout(upper_cfg["blocks"], gap, offset + float(upper_cfg.get("offsetX", 0)))
-            for i, (b, x, w) in enumerate(upper, 1):
-                if b.get("type", "cabinet") == "cabinet":
-                    self.box("Верх_{}_шкаф".format(i), w, d["upperDepth"], d["upperHeight"], x, 0, z_upper, "upper")
-                # type="gap" (напр. слот вытяжки) — пустое место
+            for j, (x1, x2) in enumerate(self._runs(lower, has_plinth), 1):
+                self.mbox("Цоколь_{}_{}".format(tag, j), side, x1, 0, x2 - x1,
+                          d["lowerDepth"] - d["plinthRecess"], d["plinthHeight"], 0, "plinth")
 
-            if upper_cfg.get("antresol", False):
-                x1 = upper[0][1]
-                x2 = upper[-1][1] + upper[-1][2]
-                self.box("Антресоль", x2 - x1, d["upperDepth"], d["antresolHeight"],
-                         x1, 0, z_upper_top + gap, "upper")
+            # --- верхний ряд ----------------------------------------------
+            upper_cfg = cfg.get("upper", {})
+            if upper_cfg.get("enabled", True) and upper_cfg.get("blocks"):
+                upper = self._layout(upper_cfg["blocks"], gap, offset + float(upper_cfg.get("offsetX", 0)))
+                for i, (b, x, w) in enumerate(upper, 1):
+                    if b.get("type", "cabinet") == "cabinet":
+                        self.mbox("Верх_{}_{}_шкаф".format(tag, i), side, x, 0, w,
+                                  d["upperDepth"], d["upperHeight"], z_upper, "upper")
+                    # type="gap" (напр. слот вытяжки) — пустое место
+
+                if upper_cfg.get("antresol", False):
+                    x1 = upper[0][1]
+                    x2 = upper[-1][1] + upper[-1][2]
+                    self.mbox("Антресоль_{}".format(tag), side, x1, 0, x2 - x1,
+                              d["upperDepth"], d["antresolHeight"], z_upper_top + gap, "upper")
 
 
 def _check_units():
