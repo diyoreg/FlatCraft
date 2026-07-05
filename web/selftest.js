@@ -92,6 +92,11 @@ async function run() {
     ok(l.kitchen.sides.west.offsetX === core.legOffset(core.DIMS), "шаблон Г: крыло отступает от угла на столешницу");
     eq(core.sidesOf(u), ["west", "south", "east"], "sidesOf: порядок сторон П");
     ok(core.wallLength(l, "south") === 4200 && core.wallLength(l, "west") === 3000, "wallLength: юг по длине, запад по ширине");
+    ok(["linear", "L", "U"].every(lt => {
+      const p2 = core.defaultProject("t", lt);
+      return core.sidesOf(p2).every(s =>
+        p2.kitchen.sides[s].lower.blocks.length === 0 && p2.kitchen.sides[s].upper.blocks.length === 0);
+    }), "defaultProject: новый проект пуст во всех режимах");
   }
   {
     const room = { length: 4000, width: 3000 };
@@ -117,8 +122,24 @@ async function run() {
     ok(!(await FC.DB.get(id)), "DB: delete");
   }
 
-  /* ---------- интерфейс ---------- */
-  FC.renderAll();
+  /* ---------- интерфейс ----------
+     новый проект пуст, поэтому для UI-тестов заполняем раскладку сами */
+  const seed = FC.core.defaultProject("Тестовая");
+  seed.kitchen.sides.south.lower.blocks = [
+    { type: "drawers", width: 600, drawers: 3 },
+    { type: "cabinet", width: 600 },
+    { type: "gap", width: 600, tall: false, label: "плита" },
+    { type: "cabinet", width: 600 },
+    { type: "tall", width: 600, label: "пенал" },
+    { type: "gap", width: 700, tall: true, label: "холодильник" },
+  ];
+  seed.kitchen.sides.south.upper.blocks = [
+    { type: "cabinet", width: 600 },
+    { type: "cabinet", width: 600 },
+    { type: "gap", width: 600, label: "вытяжка" },
+    { type: "cabinet", width: 600 },
+  ];
+  FC.setP(seed);
   await sleep(30);
   const z = FC.core.zLevels(P().kitchen.dims);
 

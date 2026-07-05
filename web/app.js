@@ -1357,6 +1357,13 @@ async function boot() {
 window.FC = {
   core: FCCore, DB,
   getP: () => P,
+  setP: p => {
+    P = FCCore.migrate(p);
+    dbId = null; sel = null; ia = null;
+    activeSide = FCCore.sidesOf(P)[0];
+    undoMgr.reset(P);
+    syncPanelInputs(); renderAll();
+  },
   getSel: () => sel,
   setSel: s => { sel = s; renderAll(); },
   getSide: () => activeSide,

@@ -40,75 +40,19 @@ const FCCore = (() => {
     };
   }
 
+  /* Новый проект всегда пустой (без блоков) во всех режимах.
+     layoutType лишь определяет, какие стены есть; у боковых крыльев
+     заранее выставлены разумные отступы от угла. */
   function defaultProject(name, layout = "linear") {
     if (!LAYOUT_SIDES[layout]) layout = "linear";
     const d = { ...DIMS };
     const lo = legOffset(d), uo = legUpperOffset(d);
 
-    const southMain = {
-      offsetX: 0,
-      lower: { blocks: [
-        { type: "drawers", width: 600, drawers: 3 },
-        { type: "cabinet", width: 600 },
-        { type: "gap", width: 600, tall: false, label: "плита" },
-        { type: "cabinet", width: 600 },
-      ]},
-      upper: { enabled: true, offsetX: 0, antresol: false, blocks: [
-        { type: "cabinet", width: 600 },
-        { type: "cabinet", width: 600 },
-        { type: "gap", width: 600, label: "вытяжка" },
-        { type: "cabinet", width: 600 },
-      ]},
-    };
-
     const sides = {};
-    if (layout === "linear") {
-      sides.south = JSON.parse(JSON.stringify(southMain));
-      sides.south.lower.blocks.push(
-        { type: "tall", width: 600, label: "пенал" },
-        { type: "gap", width: 700, tall: true, label: "холодильник" });
-    } else if (layout === "L") {
-      sides.south = JSON.parse(JSON.stringify(southMain));
-      sides.south.lower.blocks.push(
-        { type: "tall", width: 600, label: "пенал" },
-        { type: "gap", width: 700, tall: true, label: "холодильник" });
-      sides.west = {
-        offsetX: lo,
-        lower: { blocks: [
-          { type: "cabinet", width: 600, label: "" },
-          { type: "gap", width: 600, tall: false, label: "посудомойка" },
-          { type: "cabinet", width: 600 },
-        ]},
-        upper: { enabled: true, offsetX: uo, antresol: false, blocks: [
-          { type: "cabinet", width: 600 },
-          { type: "cabinet", width: 600 },
-        ]},
-      };
-    } else { // U
-      sides.west = {
-        offsetX: lo,
-        lower: { blocks: [
-          { type: "gap", width: 700, tall: true, label: "холодильник" },
-          { type: "tall", width: 600, label: "пенал" },
-          { type: "cabinet", width: 600 },
-        ]},
-        upper: { enabled: true, offsetX: 700 + d.gap + 600 + d.gap, antresol: false, blocks: [
-          { type: "cabinet", width: 600 },
-        ]},
-      };
-      sides.south = JSON.parse(JSON.stringify(southMain));
-      sides.east = {
-        offsetX: lo,
-        lower: { blocks: [
-          { type: "cabinet", width: 600 },
-          { type: "gap", width: 600, tall: false, label: "посудомойка" },
-          { type: "drawers", width: 600, drawers: 3 },
-        ]},
-        upper: { enabled: true, offsetX: uo, antresol: false, blocks: [
-          { type: "cabinet", width: 600 },
-          { type: "cabinet", width: 600 },
-        ]},
-      };
+    for (const side of LAYOUT_SIDES[layout]) {
+      const leg = side !== "south";
+      sides[side] = emptySide(leg ? lo : 0);
+      if (leg) sides[side].upper.offsetX = uo;
     }
 
     return {
