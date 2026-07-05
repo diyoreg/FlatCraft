@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlatCraft — редактор кухни</title>
+<style>
+  :root {
+    --bg: #0e0f12;
+    --panel: #15171c;
+    --panel2: #1a1d23;
+    --border: #262a33;
+    --text: #c9cdd5;
+    --muted: #767d88;
+    --accent: #5b9dff;
+    --danger: #ff6b6b;
+    --ok: #58c98a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 "Inter", "Segoe UI", system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---------- top bar ---------- */
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+  }
+  header .logo { font-weight: 600; letter-spacing: .4px; color: #fff; }
+  header .logo span { color: var(--accent); }
+  #projName {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 10px; border-radius: 6px; width: 230px;
+  }
+  header .spacer { flex: 1; }
+  #status { color: var(--muted); font-size: 12px; }
+  #status.over { color: var(--danger); }
+  button {
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font: inherit;
+  }
+  button:hover { border-color: var(--accent); color: #fff; }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  button.primary:hover { background: var(--accent); color: #0b0d10; }
+  button:disabled { opacity: .35; cursor: default; }
+  button:disabled:hover { border-color: var(--border); color: var(--text); background: transparent; }
+
+  /* ---------- layout ---------- */
+  main { flex: 1; display: flex; min-height: 0; }
+  #left {
+    width: 250px; flex: 0 0 auto; overflow-y: auto;
+    background: var(--panel); border-right: 1px solid var(--border);
+    padding: 12px;
+  }
+  #center { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 10px; gap: 10px; }
+  #right {
+    width: 230px; flex: 0 0 auto; overflow-y: auto;
+    background: var(--panel); border-left: 1px solid var(--border);
+    padding: 12px;
+  }
+
+  .view {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+    position: relative; overflow: hidden;
+  }
+  .view .vlabel {
+    position: absolute; top: 8px; left: 12px; z-index: 2;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted);
+    pointer-events: none;
+  }
+  #viewFront { flex: 1.4; min-height: 0; }
+  #bottomViews { flex: 1; display: flex; gap: 10px; min-height: 0; }
+  #viewTop, #viewSide { flex: 1; }
+  .view svg { display: block; width: 100%; height: 100%; }
+
+  /* ---------- panels ---------- */
+  h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: var(--muted); font-weight: 600; margin: 16px 0 8px;
+  }
+  h3:first-child { margin-top: 0; }
+  .pal { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pal button { padding: 8px 6px; font-size: 12px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 5px 0; }
+  .row label { color: var(--muted); flex: 1; }
+  .row input[type=number], .row input[type=text] {
+    width: 80px; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 4px 7px; border-radius: 5px; text-align: right; font: inherit;
+  }
+  .row input[type=color] {
+    width: 42px; height: 24px; border: 1px solid var(--border); border-radius: 5px;
+    background: none; padding: 1px 2px; cursor: pointer;
+  }
+  .row input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+  input:focus { outline: none; border-color: var(--accent) !important; }
+
+  #inspector .row input[type=text] { width: 110px; }
+  #inspEmpty { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .btnrow { display: flex; gap: 6px; margin-top: 10px; }
+  .btnrow button { flex: 1; padding: 6px 4px; font-size: 12px; }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); background: transparent; }
+
+  #errbar {
+    display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 99;
+    background: #3a1518; color: #ffb3b3; border-top: 1px solid var(--danger);
+    padding: 8px 16px; font-size: 12px; white-space: pre-wrap;
+  }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Flat<span>Craft</span></div>
+  <input id="projName" placeholder="Имя проекта">
+  <button id="btnNew">Новый</button>
+  <button id="btnOpen">Открыть</button>
+  <button id="btnSave" class="primary">Сохранить</button>
+  <button id="btnBuild" disabled title="Появится на следующем шаге — сборка через мост с 3ds Max">Собрать в 3D</button>
+  <div class="spacer"></div>
+  <div id="status"></div>
+</header>
+
+<main>
+  <!-- ================= left: palette + params ================= -->
+  <div id="left">
+    <h3>Нижний ряд — добавить</h3>
+    <div class="pal">
+      <button data-add="lower:cabinet">Шкаф</button>
+      <button data-add="lower:drawers">Ящики</button>
+      <button data-add="lower:tall">Пенал</button>
+      <button data-add="lower:gap">Проём</button>
+    </div>
+
+    <h3>Верхний ряд — добавить</h3>
+    <div class="pal">
+      <button data-add="upper:cabinet">Шкаф</button>
+      <button data-add="upper:gap">Проём</button>
+    </div>
+
+    <h3>Раскладка</h3>
+    <div class="row"><label>Отступ слева, мм</label><input type="number" data-k="kitchen.offsetX" step="10"></div>
+    <div class="row"><label>Верхний ряд</label><input type="checkbox" data-k="kitchen.upper.enabled"></div>
+    <div class="row"><label>Сдвиг верха, мм</label><input type="number" data-k="kitchen.upper.offsetX" step="10"></div>
+    <div class="row"><label>Антресоль</label><input type="checkbox" data-k="kitchen.upper.antresol"></div>
+
+    <h3>Комната</h3>
+    <div class="row"><label>Длина (X), мм</label><input type="number" data-k="room.length" step="50"></div>
+    <div class="row"><label>Ширина (Y), мм</label><input type="number" data-k="room.width" step="50"></div>
+    <div class="row"><label>Высота, мм</label><input type="number" data-k="room.height" step="50"></div>
+    <div class="row"><label>Стены, мм</label><input type="number" data-k="room.wallThickness" step="10"></div>
+
+    <h3>Размеры</h3>
+    <div class="row"><label>Цоколь, выс.</label><input type="number" data-d="plinthHeight"></div>
+    <div class="row"><label>Цоколь, отступ</label><input type="number" data-d="plinthRecess"></div>
+    <div class="row"><label>Низ, высота</label><input type="number" data-d="lowerHeight"></div>
+    <div class="row"><label>Низ, глубина</label><input type="number" data-d="lowerDepth"></div>
+    <div class="row"><label>Зазор блоков</label><input type="number" data-d="gap"></div>
+    <div class="row"><label>Теневой зазор</label><input type="number" data-d="shadowGap"></div>
+    <div class="row"><label>Столешн., толщ.</label><input type="number" data-d="countertopThickness"></div>
+    <div class="row"><label>Столешн., вылет</label><input type="number" data-d="countertopOverhang"></div>
+    <div class="row"><label>Фартук, высота</label><input type="number" data-d="backsplashGap"></div>
+    <div class="row"><label>Верх, высота</label><input type="number" data-d="upperHeight"></div>
+    <div class="row"><label>Верх, глубина</label><input type="number" data-d="upperDepth"></div>
+    <div class="row"><label>Антресоль, выс.</label><input type="number" data-d="antresolHeight"></div>
+
+    <h3>Цвета</h3>
+    <div class="row"><label>Низ</label><input type="color" data-c="lower"></div>
+    <div class="row"><label>Верх</label><input type="color" data-c="upper"></div>
+    <div class="row"><label>Столешница</label><input type="color" data-c="countertop"></div>
+    <div class="row"><label>Фартук</label><input type="color" data-c="backsplash"></div>
+    <div class="row"><label>Цоколь</label><input type="color" data-c="plinth"></div>
+    <div class="row"><label>Стены</label><input type="color" data-c="walls"></div>
+    <div class="row"><label>Пол</label><input type="color" data-c="floor"></div>
+  </div>
+
+  <!-- ================= center: views ================= -->
+  <div id="center">
+    <div class="view" id="viewFront"><div class="vlabel">Спереди</div><svg id="svgFront"></svg></div>
+    <div id="bottomViews">
+      <div class="view" id="viewTop"><div class="vlabel">Сверху</div><svg id="svgTop"></svg></div>
+      <div class="view" id="viewSide"><div class="vlabel">Сбоку — разрез</div><svg id="svgSide"></svg></div>
+    </div>
+  </div>
+
+  <!-- ================= right: inspector ================= -->
+  <div id="right">
+    <h3>Блок</h3>
+    <div id="inspEmpty">Кликните блок на виде спереди.<br><br>Перетаскивание блока мышью меняет его место в ряду.</div>
+    <div id="inspector" style="display:none">
+      <div class="row"><label>Тип</label><span id="iType" style="color:#fff"></span></div>
+      <div class="row"><label>Ширина, мм</label><input type="number" id="iWidth" step="10"></div>
+      <div class="row" id="rDrawers"><label>Ящиков</label><input type="number" id="iDrawers" min="1" max="6"></div>
+      <div class="row" id="rTall"><label>Высокая техника</label><input type="checkbox" id="iTall"></div>
+      <div class="row" id="rLabel"><label>Подпись</label><input type="text" id="iLabel"></div>
+      <div class="btnrow">
+        <button id="iLeft" title="Сдвинуть влево">←</button>
+        <button id="iDup" title="Дублировать">⧉</button>
+        <button id="iRight" title="Сдвинуть вправо">→</button>
+      </div>
+      <div class="btnrow"><button id="iDel" class="danger">Удалить</button></div>
+    </div>
+  </div>
+</main>
+
+<div id="errbar"></div>
+<input type="file" id="fileInput" accept=".json" style="display:none">
+
+<script>
+"use strict";
+/* ======================= данные ======================= */
+const DIMS = {
+  plinthHeight: 100, plinthRecess: 10, lowerHeight: 720, lowerDepth: 600,
+  gap: 4, shadowGap: 4, countertopThickness: 40, countertopOverhang: 40,
+  backsplashGap: 600, backsplashThickness: 12, upperHeight: 720,
+  upperDepth: 350, antresolHeight: 360,
+};
+const COLORS = {
+  walls: "#EDEDED", floor: "#B9975B", lower: "#3A3F45", upper: "#E9E4DA",
+  countertop: "#23262B", plinth: "#1C1E22", backsplash: "#CFC8BB",
+};
+const TYPE_RU = { cabinet: "Шкаф", drawers: "Ящики", tall: "Пенал", gap: "Проём" };
+
+function defaultProject() {
+  return {
+    formatVersion: 2,
+    name: "Новая кухня",
+    units: "mm",
+    room: { length: 4200, width: 3000, height: 2700, wallThickness: 400, ceiling: false },
+    kitchen: {
+      wall: "south", offsetX: 0,
+      dims: { ...DIMS },
+      lower: { blocks: [
+        { type: "drawers", width: 600, drawers: 3 },
+        { type: "cabinet", width: 600 },
+        { type: "gap", width: 600, tall: false, label: "плита" },
+        { type: "cabinet", width: 600 },
+        { type: "tall", width: 600, label: "пенал" },
+        { type: "gap", width: 700, tall: true, label: "холодильник" },
+      ]},
+      upper: { enabled: true, offsetX: 0, antresol: false, blocks: [
+        { type: "cabinet", width: 600 },
+        { type: "cabinet", width: 600 },
+        { type: "gap", width: 600, label: "вытяжка" },
+        { type: "cabinet", width: 600 },
+      ]},
+      colors: { ...COLORS },
+    },
+  };
+}
+
+let P = defaultProject();
+let sel = null;               // {row:'lower'|'upper', idx}
+let drag = null;
+
+const $ = s => document.querySelector(s);
+const D = () => ({ ...DIMS, ...P.kitchen.dims });
+const C = () => ({ ...COLORS, ...P.kitchen.colors });
+
+/* ======================= геометрия (зеркало fc_builder.py) ======================= */
+function layout(blocks, gap, x0) {
+  const out = []; let x = x0;
+  for (const b of blocks) { out.push({ b, x, w: +b.width || 600 }); x += (+b.width || 600) + gap; }
+  return out;
+}
+function runs(placed, pred) {
+  const rs = []; let s = null, e = null;
+  for (const { b, x, w } of placed) {
+    if (pred(b)) { if (s === null) s = x; e = x + w; }
+    else if (s !== null) { rs.push([s, e]); s = null; }
+  }
+  if (s !== null) rs.push([s, e]);
+  return rs;
+}
+const underCT = b => b.type === "cabinet" || b.type === "drawers" || (b.type === "gap" && !b.tall);
+const hasPlinth = b => !(b.type === "gap" && b.tall);
+
+function zLevels() {
+  const d = D();
+  const zLower = d.plinthHeight, zLowerTop = zLower + d.lowerHeight;
+  const zCt = zLowerTop + d.shadowGap, zCtTop = zCt + d.countertopThickness;
+  const zUpper = zCtTop + d.backsplashGap, zUpperTop = zUpper + d.upperHeight;
+  return { zLower, zLowerTop, zCt, zCtTop, zUpper, zUpperTop };
+}
+const lowerPlaced = () => layout(P.kitchen.lower.blocks, D().gap, +P.kitchen.offsetX || 0);
+const upperPlaced = () => layout(P.kitchen.upper.blocks, D().gap,
+  (+P.kitchen.offsetX || 0) + (+P.kitchen.upper.offsetX || 0));
+
+/* ======================= svg-помощники ======================= */
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+function rect(x, y, w, h, fill, extra = "") {
+  return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(w, .5).toFixed(1)}" height="${Math.max(h, .5).toFixed(1)}" fill="${fill}" ${extra}/>`;
+}
+function txt(x, y, t, opts = "") {
+  return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="10" fill="#767d88" ${opts}>${esc(t)}</text>`;
+}
+function line(x1, y1, x2, y2, stroke = "#3a4048", extra = "") {
+  return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" ${extra}/>`;
+}
+const selStroke = (row, i) =>
+  sel && sel.row === row && sel.idx === i
+    ? `stroke="#5b9dff" stroke-width="2"` : `stroke="#0e0f12" stroke-width="0.5"`;
+const gapAttrs = (row, i) => {
+  const on = sel && sel.row === row && sel.idx === i;
+  return `fill="none" stroke="${on ? "#5b9dff" : "#565e6a"}" stroke-width="${on ? 2 : 1}" stroke-dasharray="5 4"`;
+};
+
+/* ======================= вид спереди ======================= */
+let frontScale = 1, frontMx = 0, frontMy = 0, frontH = 0;
+
+function renderFront() {
+  const svg = $("#svgFront"), box = svg.getBoundingClientRect();
+  const Wp = box.width, Hp = box.height;
+  const room = P.room, d = D(), c = C(), z = zLevels();
+  const m = 46;
+  const s = Math.min((Wp - 2 * m) / room.length, (Hp - 2 * m) / room.height);
+  frontScale = s; frontMx = m; frontMy = m; frontH = Hp;
+  const X = mm => m + mm * s;
+  const Y = mm => Hp - m - mm * s;
+  const g = [];
+
+  // комната: фон стены, пол, потолок
+  g.push(rect(X(0), Y(room.height), room.length * s, room.height * s, c.walls + "14", `stroke="#31363f" stroke-width="1"`));
+  g.push(line(X(0), Y(0), X(room.length), Y(0), "#4a505a", `stroke-width="1.5"`));
+
+  const lower = lowerPlaced(), upper = P.kitchen.upper.enabled ? upperPlaced() : [];
+
+  // цоколь и столешница/фартук — сегментами
+  for (const [x1, x2] of runs(lower, hasPlinth))
+    g.push(rect(X(x1), Y(d.plinthHeight), (x2 - x1) * s, d.plinthHeight * s, c.plinth));
+  for (const [x1, x2] of runs(lower, underCT)) {
+    g.push(rect(X(x1), Y(z.zUpper), (x2 - x1) * s, d.backsplashGap * s, c.backsplash + "55"));
+    g.push(rect(X(x1) - 4, Y(z.zCtTop), (x2 - x1) * s + 8, d.countertopThickness * s, c.countertop, `stroke="#000" stroke-width="0.5"`));
+  }
+
+  // нижние блоки
+  for (let i = 0; i < lower.length; i++) {
+    const { b, x, w } = lower[i], id = `data-row="lower" data-idx="${i}"`;
+    if (b.type === "gap") {
+      const h = b.tall ? z.zUpperTop : d.lowerHeight + d.plinthHeight;
+      g.push(`<g ${id} style="cursor:pointer">` +
+        rect(X(x), Y(h), w * s, h * s, "#ffffff05", gapAttrs("lower", i)) +
+        txt(X(x + w / 2), Y(h / 2), b.label || "проём", `text-anchor="middle"`) + `</g>`);
+    } else if (b.type === "drawers") {
+      const n = Math.max(1, +b.drawers || 3), dh = (d.lowerHeight - (n - 1) * d.gap) / n;
+      let inner = "";
+      for (let j = 0; j < n; j++)
+        inner += rect(X(x), Y(z.zLower + (j + 1) * dh + j * d.gap), w * s, dh * s, c.lower, selStroke("lower", i));
+      g.push(`<g ${id} style="cursor:grab">${inner}</g>`);
+    } else {
+      const h = b.type === "tall" ? z.zUpperTop - z.zLower : d.lowerHeight;
+      g.push(`<g ${id} style="cursor:grab">` +
+        rect(X(x), Y(z.zLower + h), w * s, h * s, c.lower, selStroke("lower", i)) + `</g>`);
+    }
+    // размерная подпись
+    g.push(txt(X(x + w / 2), Hp - m + 14, w, `text-anchor="middle"`));
+    g.push(line(X(x), Hp - m + 4, X(x), Hp - m + 8), line(X(x + w), Hp - m + 4, X(x + w), Hp - m + 8));
+  }
+
+  // верхние блоки + антресоль
+  if (P.kitchen.upper.enabled) {
+    for (let i = 0; i < upper.length; i++) {
+      const { b, x, w } = upper[i], id = `data-row="upper" data-idx="${i}"`;
+      if (b.type === "gap") {
+        g.push(`<g ${id} style="cursor:pointer">` +
+          rect(X(x), Y(z.zUpperTop), w * s, d.upperHeight * s, "#ffffff05", gapAttrs("upper", i)) +
+          txt(X(x + w / 2), Y(z.zUpper + d.upperHeight / 2), b.label || "проём", `text-anchor="middle"`) + `</g>`);
+      } else {
+        g.push(`<g ${id} style="cursor:grab">` +
+          rect(X(x), Y(z.zUpperTop), w * s, d.upperHeight * s, c.upper, selStroke("upper", i)) + `</g>`);
+      }
+    }
+    if (P.kitchen.upper.antresol && upper.length) {
+      const x1 = upper[0].x, last = upper[upper.length - 1], x2 = last.x + last.w;
+      g.push(rect(X(x1), Y(z.zUpperTop + d.gap + d.antresolHeight), (x2 - x1) * s, d.antresolHeight * s, c.upper + "cc"));
+    }
+  }
+
+  // высотные отметки слева
+  for (const [zz, lab] of [[0, "0"], [z.zCtTop, z.zCtTop], [z.zUpper, z.zUpper], [z.zUpperTop, z.zUpperTop]]) {
+    g.push(line(m - 6, Y(zz), m, Y(zz)), txt(m - 9, Y(zz) + 3, lab, `text-anchor="end"`));
+  }
+  svg.innerHTML = g.join("");
+}
+
+/* ======================= вид сверху ======================= */
+function renderTop() {
+  const svg = $("#svgTop"), box = svg.getBoundingClientRect();
+  const Wp = box.width, Hp = box.height, room = P.room, d = D(), c = C();
+  const m = 24;
+  const s = Math.min((Wp - 2 * m) / room.length, (Hp - 2 * m) / room.width);
+  const X = mm => m + mm * s, Y = mm => m + mm * s; // стена (y=0) сверху
+  const g = [];
+
+  g.push(rect(X(0), Y(0), room.length * s, room.width * s, c.floor + "22", `stroke="#31363f" stroke-width="1"`));
+  const lower = lowerPlaced();
+
+  for (const [x1, x2] of runs(lower, underCT))
+    g.push(rect(X(x1) - 2, Y(0), (x2 - x1) * s + 4, (d.lowerDepth + d.countertopOverhang) * s, c.countertop + "88"));
+
+  for (let i = 0; i < lower.length; i++) {
+    const { b, x, w } = lower[i];
+    if (b.type === "gap")
+      g.push(rect(X(x), Y(0), w * s, d.lowerDepth * s, "#ffffff05", gapAttrs("lower", i)));
+    else
+      g.push(rect(X(x), Y(0), w * s, d.lowerDepth * s, c.lower, selStroke("lower", i)));
+  }
+  if (P.kitchen.upper.enabled)
+    for (let i = 0; i < upperPlaced().length; i++) {
+      const { b, x, w } = upperPlaced()[i];
+      if (b.type !== "gap")
+        g.push(rect(X(x), Y(0), w * s, d.upperDepth * s, c.upper + "66", selStroke("upper", i)));
+    }
+  svg.innerHTML = g.join("");
+}
+
+/* ======================= вид сбоку (разрез) ======================= */
+function renderSide() {
+  const svg = $("#svgSide"), box = svg.getBoundingClientRect();
+  const Wp = box.width, Hp = box.height, room = P.room, d = D(), c = C(), z = zLevels();
+  const m = 34;
+  const s = Math.min((Wp - 2 * m) / (room.width * 0.8), (Hp - 2 * m) / room.height);
+  const X = mm => m + mm * s;           // стена слева (y=0)
+  const Yz = mm => Hp - m - mm * s;
+  const g = [];
+
+  const blk = sel && sel.row === "lower" ? P.kitchen.lower.blocks[sel.idx] : null;
+  const t = blk ? blk.type : "cabinet";
+  const isTallGap = blk && t === "gap" && blk.tall;
+
+  g.push(line(X(0), Yz(0), X(0), Yz(room.height), "#4a505a", `stroke-width="2"`));   // стена
+  g.push(line(X(0), Yz(0), Wp - 8, Yz(0), "#4a505a", `stroke-width="1.5"`));         // пол
+
+  if (!isTallGap && !(blk && t === "gap")) {
+    if (t !== "gap") {
+      if (hasPlinth(blk || { type: "cabinet" }))
+        g.push(rect(X(0), Yz(d.plinthHeight), (d.lowerDepth - d.plinthRecess) * s, d.plinthHeight * s, c.plinth));
+      const h = t === "tall" ? z.zUpperTop - z.zLower : d.lowerHeight;
+      g.push(rect(X(0), Yz(z.zLower + h), d.lowerDepth * s, h * s, c.lower));
+      if (t === "drawers") {
+        const n = Math.max(1, +(blk ? blk.drawers : 3) || 3), dh = (d.lowerHeight - (n - 1) * d.gap) / n;
+        for (let j = 1; j < n; j++)
+          g.push(line(X(0), Yz(z.zLower + j * (dh + d.gap) - d.gap / 2), X(d.lowerDepth), Yz(z.zLower + j * (dh + d.gap) - d.gap / 2), "#0e0f12", `stroke-width="2"`));
+      }
+    }
+  }
+  if (blk && t === "gap" && !blk.tall)
+    g.push(rect(X(0), Yz(z.zLower + d.lowerHeight), d.lowerDepth * s, d.lowerHeight * s, "#ffffff05", `fill="none" stroke="#565e6a" stroke-dasharray="5 4"`));
+
+  if (!isTallGap && t !== "tall") {
+    g.push(rect(X(0), Yz(z.zCtTop), (d.lowerDepth + d.countertopOverhang) * s, d.countertopThickness * s, c.countertop));
+    g.push(rect(X(0), Yz(z.zUpper), d.backsplashThickness * s, d.backsplashGap * s, c.backsplash));
+    if (P.kitchen.upper.enabled) {
+      g.push(rect(X(0), Yz(z.zUpperTop), d.upperDepth * s, d.upperHeight * s, c.upper));
+      if (P.kitchen.upper.antresol)
+        g.push(rect(X(0), Yz(z.zUpperTop + d.gap + d.antresolHeight), d.upperDepth * s, d.antresolHeight * s, c.upper + "cc"));
+    }
+  }
+  if (t === "tall" || isTallGap) {
+    const h = z.zUpperTop - (isTallGap ? 0 : z.zLower);
+    if (isTallGap)
+      g.push(rect(X(0), Yz(z.zUpperTop), d.lowerDepth * s, z.zUpperTop * s, "#ffffff05", `fill="none" stroke="#565e6a" stroke-dasharray="5 4"`));
+  }
+
+  // отметки высот (zLowerTop опущен — сливается с zCtTop)
+  for (const zz of [d.plinthHeight, z.zCtTop, z.zUpper, z.zUpperTop])
+    g.push(line(X(0) - 5, Yz(zz), X(0), Yz(zz)), txt(X(0) - 8, Yz(zz) + 3, zz, `text-anchor="end"`));
+
+  svg.innerHTML = g.join("");
+}
+
+/* ======================= рендер всего ======================= */
+function renderAll(save = true) {
+  renderFront(); renderTop(); renderSide(); renderInspector(); renderStatus();
+  if (save) { try { localStorage.setItem("flatcraft_project", JSON.stringify(P)); } catch (e) {} }
+}
+function renderStatus() {
+  const lower = lowerPlaced(), room = P.room;
+  const end = lower.length ? lower[lower.length - 1].x + lower[lower.length - 1].w : 0;
+  const st = $("#status");
+  st.textContent = `нижний ряд: ${end} мм из ${room.length} мм`;
+  st.classList.toggle("over", end > room.length);
+}
+
+/* ======================= инспектор ======================= */
+function selBlock() { return sel ? P.kitchen[sel.row].blocks[sel.idx] : null; }
+
+function renderInspector() {
+  const b = selBlock();
+  $("#inspEmpty").style.display = b ? "none" : "";
+  $("#inspector").style.display = b ? "" : "none";
+  if (!b) return;
+  $("#iType").textContent = TYPE_RU[b.type] + (sel.row === "upper" ? " (верх)" : "");
+  $("#iWidth").value = b.width;
+  $("#rDrawers").style.display = b.type === "drawers" ? "" : "none";
+  $("#iDrawers").value = b.drawers || 3;
+  $("#rTall").style.display = (b.type === "gap" && sel.row === "lower") ? "" : "none";
+  $("#iTall").checked = !!b.tall;
+  $("#rLabel").style.display = (b.type === "gap" || b.type === "tall") ? "" : "none";
+  $("#iLabel").value = b.label || "";
+}
+
+$("#iWidth").addEventListener("change", e => { const b = selBlock(); if (b) { b.width = +e.target.value || 600; renderAll(); } });
+$("#iDrawers").addEventListener("change", e => { const b = selBlock(); if (b) { b.drawers = Math.max(1, +e.target.value || 3); renderAll(); } });
+$("#iTall").addEventListener("change", e => { const b = selBlock(); if (b) { b.tall = e.target.checked; renderAll(); } });
+$("#iLabel").addEventListener("change", e => { const b = selBlock(); if (b) { b.label = e.target.value; renderAll(); } });
+$("#iDel").addEventListener("click", () => {
+  if (!sel) return;
+  P.kitchen[sel.row].blocks.splice(sel.idx, 1); sel = null; renderAll();
+});
+$("#iDup").addEventListener("click", () => {
+  if (!sel) return;
+  const arr = P.kitchen[sel.row].blocks;
+  arr.splice(sel.idx + 1, 0, JSON.parse(JSON.stringify(arr[sel.idx])));
+  sel.idx++; renderAll();
+});
+$("#iLeft").addEventListener("click", () => moveSel(-1));
+$("#iRight").addEventListener("click", () => moveSel(1));
+function moveSel(dir) {
+  if (!sel) return;
+  const arr = P.kitchen[sel.row].blocks, j = sel.idx + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[sel.idx], arr[j]] = [arr[j], arr[sel.idx]];
+  sel.idx = j; renderAll();
+}
+document.addEventListener("keydown", e => {
+  if (e.key === "Delete" && sel && document.activeElement.tagName !== "INPUT") {
+    P.kitchen[sel.row].blocks.splice(sel.idx, 1); sel = null; renderAll();
+  }
+});
+
+/* ======================= палитра ======================= */
+document.querySelectorAll("[data-add]").forEach(btn => btn.addEventListener("click", () => {
+  const [row, type] = btn.dataset.add.split(":");
+  const b = { type, width: 600 };
+  if (type === "drawers") b.drawers = 3;
+  if (type === "gap") { b.label = "техника"; if (row === "lower") b.tall = false; }
+  if (type === "tall") b.label = "пенал";
+  const arr = P.kitchen[row].blocks;
+  const at = sel && sel.row === row ? sel.idx + 1 : arr.length;
+  arr.splice(at, 0, b);
+  sel = { row, idx: at };
+  renderAll();
+}));
+
+/* ======================= drag на виде спереди ======================= */
+const svgFront = $("#svgFront");
+svgFront.addEventListener("pointerdown", e => {
+  const t = e.target.closest("[data-row]");
+  if (!t) { sel = null; renderAll(false); return; }
+  const row = t.dataset.row, idx = +t.dataset.idx;
+  drag = { row, idx, x0: e.clientX, moved: false };
+  svgFront.setPointerCapture(e.pointerId);
+});
+svgFront.addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (Math.abs(e.clientX - drag.x0) > 5) drag.moved = true;
+  if (!drag.moved) return;
+  const box = svgFront.getBoundingClientRect();
+  const mm = (e.clientX - box.left - frontMx) / frontScale;
+  const arr = P.kitchen[drag.row].blocks;
+  const placed = layout(arr, D().gap, drag.row === "lower" ? (+P.kitchen.offsetX || 0)
+    : (+P.kitchen.offsetX || 0) + (+P.kitchen.upper.offsetX || 0));
+  let newIdx = 0;
+  for (let i = 0; i < placed.length; i++)
+    if (i !== drag.idx && mm > placed[i].x + placed[i].w / 2) newIdx++;
+  if (newIdx !== drag.idx) {
+    const [b] = arr.splice(drag.idx, 1);
+    arr.splice(newIdx, 0, b);
+    drag.idx = newIdx;
+    sel = { row: drag.row, idx: newIdx };
+    renderAll(false);
+  }
+});
+svgFront.addEventListener("pointerup", e => {
+  if (!drag) return;
+  if (!drag.moved) sel = { row: drag.row, idx: drag.idx };
+  drag = null;
+  renderAll();
+});
+
+/* ======================= параметры слева ======================= */
+function getPath(obj, path) { return path.split(".").reduce((o, k) => o[k], obj); }
+function setPath(obj, path, v) {
+  const ks = path.split("."), last = ks.pop();
+  ks.reduce((o, k) => o[k], obj)[last] = v;
+}
+function bindInputs() {
+  document.querySelectorAll("[data-k]").forEach(inp => {
+    const path = inp.dataset.k;
+    if (inp.type === "checkbox") inp.checked = !!getPath(P, path);
+    else inp.value = getPath(P, path);
+    inp.onchange = () => {
+      setPath(P, path, inp.type === "checkbox" ? inp.checked : +inp.value || 0);
+      renderAll();
+    };
+  });
+  document.querySelectorAll("[data-d]").forEach(inp => {
+    inp.value = D()[inp.dataset.d];
+    inp.onchange = () => { P.kitchen.dims[inp.dataset.d] = +inp.value || 0; renderAll(); };
+  });
+  document.querySelectorAll("[data-c]").forEach(inp => {
+    inp.value = C()[inp.dataset.c];
+    inp.oninput = () => { P.kitchen.colors[inp.dataset.c] = inp.value; renderAll(); };
+  });
+  $("#projName").value = P.name;
+}
+$("#projName").addEventListener("change", e => { P.name = e.target.value; renderAll(); });
+
+/* ======================= файлы ======================= */
+$("#btnNew").addEventListener("click", () => {
+  if (!confirm("Начать новый проект? Несохранённые изменения будут потеряны.")) return;
+  P = defaultProject(); sel = null; bindInputs(); renderAll();
+});
+$("#btnSave").addEventListener("click", async () => {
+  const data = JSON.stringify(P, null, 2);
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await showSaveFilePicker({
+        suggestedName: "project.json",
+        types: [{ description: "Проект FlatCraft", accept: { "application/json": [".json"] } }],
+      });
+      const w = await h.createWritable(); await w.write(data); await w.close();
+      return;
+    } catch (e) { if (e.name === "AbortError") return; }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+  a.download = "project.json"; a.click(); URL.revokeObjectURL(a.href);
+});
+$("#btnOpen").addEventListener("click", () => $("#fileInput").click());
+$("#fileInput").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const p = JSON.parse(await f.text());
+    if (!p.kitchen || !p.room) throw new Error("это не проект FlatCraft");
+    P = p; sel = null; bindInputs(); renderAll();
+  } catch (err) { alert("Не удалось открыть: " + err.message); }
+  e.target.value = "";
+});
+
+/* ======================= старт ======================= */
+window.addEventListener("error", e => {
+  const bar = $("#errbar"); bar.style.display = "block";
+  bar.textContent = "Ошибка: " + e.message + " (" + e.lineno + ")";
+});
+window.addEventListener("resize", () => renderAll(false));
+
+try {
+  const saved = localStorage.getItem("flatcraft_project");
+  if (saved) P = JSON.parse(saved);
+} catch (e) {}
+bindInputs();
+renderAll(false);
+</script>
+</body>
+</html>
